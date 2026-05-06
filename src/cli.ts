@@ -2,24 +2,28 @@
 import process from "node:process";
 import path from "node:path";
 import fs from "node:fs";
-import { createDefaultCommandRegistry } from "./commands.js";
-import { renderShellFrame } from "./renderer.js";
+import { fileURLToPath } from "node:url";
+import { EditorApp } from "./app.js";
 
-type ParsedArgs = {
+export type ParsedArgs = {
   paths: string[];
   help: boolean;
   version: boolean;
 };
 
-const VERSION = "0.1.0";
+export type CliResult = {
+  exitCode: number;
+  args?: ParsedArgs;
+  error?: string;
+};
 
-function printHelp(): void {
-  console.log(
-    `edit ${VERSION}\n\nUsage:\n  edit [paths...]\n  edit --help\n  edit --version\n\nExamples:\n  edit\n  edit .\n  edit src test`
-  );
+export const VERSION = "2026.5.5";
+
+export function usageText(): string {
+  return `edit ${VERSION}\n\nUsage:\n  edit [paths...]\n  edit --help\n  edit --version\n\nOptions:\n  -h, --help      Show this help text\n  -v, --version   Print version and exit\n\nKeys:\n  q / Ctrl+C      Quit\n  p               Open command palette\n  t               Focus tree\n  e               Focus editor\n\nExamples:\n  edit\n  edit .\n  edit src test`;
 }
 
-function parseArgs(argv: string[]): ParsedArgs {
+export function parseArgs(argv: string[]): CliResult {
   const parsed: ParsedArgs = { paths: [], help: false, version: false };
 
   for (const arg of argv) {
@@ -34,57 +38,69 @@ function parseArgs(argv: string[]): ParsedArgs {
     }
 
     if (arg.startsWith("-")) {
-      console.error(`Unknown flag: ${arg}`);
-      process.exitCode = 2;
-      printHelp();
-      process.exit();
+      return { exitCode: 2, error: `Unknown flag: ${arg}` };
     }
 
     parsed.paths.push(arg);
   }
 
-  return parsed;
+  return { exitCode: 0, args: parsed };
 }
 
-function resolveWorkspaceRoots(paths: string[]): string[] {
+export function resolveWorkspaceRoots(paths: string[]): CliResult & { roots?: string[] } {
   if (paths.length === 0) {
-    return [process.cwd()];
+    return { exitCode: 0, roots: [process.cwd()] };
   }
 
   const deduped = new Set<string>();
   for (const candidate of paths) {
     const absolute = path.resolve(candidate);
     if (!fs.existsSync(absolute)) {
-      console.error(`Path does not exist: ${candidate}`);
-      process.exitCode = 2;
-      process.exit();
+      return { exitCode: 2, error: `Path does not exist: ${candidate}` };
     }
 
     deduped.add(absolute);
   }
 
-  return [...deduped];
+  return { exitCode: 0, roots: [...deduped] };
 }
 
-function main(): void {
-  const args = parseArgs(process.argv.slice(2));
-
-  if (args.help) {
-    printHelp();
-    return;
+export function run(argv: string[], stdout: NodeJS.WriteStream = process.stdout, stderr: NodeJS.WriteStream = process.stderr): number {
+  const parsed = parseArgs(argv);
+  if (parsed.exitCode !== 0 || !parsed.args) {
+    if (parsed.error) {
+      stderr.write(`${parsed.error}\n`);
+    }
+    stdout.write(`${usageText()}\n`);
+    return parsed.exitCode;
   }
 
-  if (args.version) {
-    console.log(VERSION);
-    return;
+  if (parsed.args.help) {
+    stdout.write(`${usageText()}\n`);
+    return 0;
   }
 
-  const workspaceRoots = resolveWorkspaceRoots(args.paths);
+  if (parsed.args.version) {
+    stdout.write(`${VERSION}\n`);
+    return 0;
+  }
 
-  const registry = createDefaultCommandRegistry(() => process.exit(0));
-  void registry;
+  const roots = resolveWorkspaceRoots(parsed.args.paths);
+  if (roots.exitCode !== 0 || !roots.roots) {
+    if (roots.error) {
+      stderr.write(`${roots.error}\n`);
+    }
+    return roots.exitCode;
+  }
 
-  console.log(renderShellFrame(workspaceRoots));
+  const app = new EditorApp(roots.roots);
+  app.init(process.stdin, stdout);
+  app.start();
+  return 0;
 }
 
-main();
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
+const currentPath = fileURLToPath(import.meta.url);
+if (invokedPath === currentPath) {
+  process.exitCode = run(process.argv.slice(2));
+}

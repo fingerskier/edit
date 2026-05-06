@@ -3,30 +3,30 @@
 This checklist breaks each milestone into actionable implementation steps.
 
 ## M0 — Bootstrap
-- [ ] Create npm package scaffold:
-  - [ ] Initialize package metadata (`name`, `version`, `type`, `bin`).
-  - [ ] Add `bin` entry for `edit` command.
-  - [ ] Configure TypeScript compile target and output directories.
-  - [ ] Add runtime entrypoint and build scripts (`build`, `dev`, `start`).
-- [ ] Implement CLI interface:
-  - [ ] Parse `edit [paths...]`, `--help`, and `--version`.
-  - [ ] Validate unknown/invalid flags and return exit code `2`.
-  - [ ] Print readable usage/help text.
-- [ ] Implement app lifecycle boot sequence:
-  - [ ] `init` stage for loading config/runtime state.
-  - [ ] `render loop` stage for frame scheduling and input polling.
-  - [ ] `shutdown` stage for cleanup and terminal restore.
-- [ ] Build renderer skeleton:
-  - [ ] Define fixed layout regions: tree, editor, status, palette overlay.
-  - [ ] Render placeholder components for each region.
-  - [ ] Verify frame stability with no feature logic.
-- [ ] Add command registry foundation:
-  - [ ] Register `app.quit`, `palette.open`, `tree.focus`, `editor.focus`.
-  - [ ] Wire command dispatch from key/input events.
-  - [ ] Add minimal tests for registration + execution.
-- [ ] Exit criteria validation:
-  - [ ] Confirm `npx edit` launches stable TUI on macOS/Linux/Windows.
-  - [ ] Confirm unknown flags return code `2` and help text.
+- [x] Create npm package scaffold:
+  - [x] Initialize package metadata (`name`, `version`, `type`, `bin`).
+  - [x] Add `bin` entry for `edit` command.
+  - [x] Configure TypeScript compile target and output directories.
+  - [x] Add runtime entrypoint and build scripts (`build`, `dev`, `start`).
+- [x] Implement CLI interface:
+  - [x] Parse `edit [paths...]`, `--help`, and `--version`.
+  - [x] Validate unknown/invalid flags and return exit code `2`.
+  - [x] Print readable usage/help text.
+- [x] Implement app lifecycle boot sequence:
+  - [x] `init` stage for loading config/runtime state.
+  - [x] `render loop` stage for frame scheduling and input polling.
+  - [x] `shutdown` stage for cleanup and terminal restore.
+- [x] Build renderer skeleton:
+  - [x] Define fixed layout regions: tree, editor, status, palette overlay.
+  - [x] Render placeholder components for each region.
+  - [x] Verify frame stability with no feature logic.
+- [x] Add command registry foundation:
+  - [x] Register `app.quit`, `palette.open`, `tree.focus`, `editor.focus`.
+  - [x] Wire command dispatch from key/input events.
+  - [x] Add minimal tests for registration + execution.
+- [x] Exit criteria validation:
+  - [x] Confirm `npx edit` launches stable TUI on macOS/Linux/Windows.
+  - [x] Confirm unknown flags return code `2` and help text.
 
 ## M1 — Core editing
 - [ ] Implement text buffer core:
