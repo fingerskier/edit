@@ -293,18 +293,100 @@ Suggested precedence:
 ---
 
 ## 15. Suggested Implementation Milestones
-1. **M0: Bootstrap**
-   - CLI entrypoint, renderer skeleton, command registry.
-2. **M1: Core editing**
-   - Piece table, cursor model, undo/redo, file open/save.
-3. **M2: Workspace UX**
-   - Always-on tree, multi-root, watcher refresh, fuzzy navigation.
-4. **M3: Power features**
-   - Command palette, chained hotkeys, clipboard history, theme system.
-5. **M4: LSP**
-   - Diagnostics + go-to-definition + symbols.
-6. **M5: Hardening**
-   - Performance tuning, cross-platform bug fixes, CI matrix.
+
+### M0: Bootstrap
+**Goal:** Run `npx edit` and render the first interactive frame with a minimal app shell.
+
+**Deliverables**
+- npm package scaffold with `bin` entry and TypeScript build/runtime wiring.
+- CLI argument parsing for `edit [paths...]`, `--help`, `--version`.
+- App lifecycle boot sequence (`init -> render loop -> shutdown`).
+- Renderer skeleton with fixed layout regions (tree/editor/status/palette overlay placeholders).
+- Command registry with at least: `app.quit`, `palette.open`, `tree.focus`, `editor.focus`.
+
+**Exit criteria**
+- `npx edit` launches a stable TUI frame on macOS/Linux/Windows.
+- Unknown flags produce exit code `2` with readable help text.
+
+---
+
+### M1: Core editing
+**Goal:** Make single-file editing solid and fast.
+
+**Deliverables**
+- Piece-table buffer implementation with insert/delete/replace.
+- Cursor + selection model with multi-cursor normalization.
+- Undo/redo transactional history with typing coalescing.
+- File open/save + dirty state tracking.
+- Status line wiring for file name, cursor row/col, dirty marker.
+
+**Exit criteria**
+- Open, edit, undo/redo, and save works for text files up to at least 5 MB.
+- Median keypress-to-render latency remains interactive during sustained typing.
+
+---
+
+### M2: Workspace UX
+**Goal:** Provide reliable project navigation and filesystem sync.
+
+**Deliverables**
+- Always-visible collapsible tree with keyboard navigation.
+- Multi-root workspace model and rendering.
+- Fuzzy file navigation (quick open) backed by indexed paths.
+- File watcher integration with debounced refresh.
+- External change handling: auto-reload clean files; conflict prompt for dirty files.
+
+**Exit criteria**
+- Opening with multiple paths displays unified roots correctly.
+- Tree updates reflect create/rename/delete events without restarting.
+
+---
+
+### M3: Power features
+**Goal:** Ship productivity features that define day-to-day workflow.
+
+**Deliverables**
+- Command palette with fuzzy command matching.
+- Chained hotkey resolver (`Ctrl+K` style chords) with context predicates.
+- Custom keymap loading + conflict detection warnings.
+- Clipboard history ring buffer with configurable size.
+- Theme loader/editor + live theme reload on save.
+
+**Exit criteria**
+- Users can remap critical editor/tree/palette commands without code changes.
+- Palette can execute every registered command.
+
+---
+
+### M4: LSP
+**Goal:** Add language intelligence with resilient server lifecycle handling.
+
+**Deliverables**
+- LSP client process manager (start, initialize, reconnect, shutdown).
+- Incremental text sync and document version tracking.
+- Diagnostics surfaced in status line and inline markers.
+- Go-to-definition + hover + document symbols commands.
+- Timeout/staleness guards for slow or crashed servers.
+
+**Exit criteria**
+- At least one mainstream language server (e.g., TypeScript) works end-to-end.
+- Server crash/restart path does not freeze editor input.
+
+---
+
+### M5: Hardening
+**Goal:** Reach release-quality performance and portability.
+
+**Deliverables**
+- Startup and command latency instrumentation (`--profile-startup`, `--profile-render`).
+- Performance optimization pass for large files and deep trees.
+- Cross-platform key normalization validation (macOS/Linux/Windows modifiers).
+- CI matrix with unit, integration, and smoke tests on all supported OS families.
+- Release checklist for npm publish, versioning, and rollback plan.
+
+**Exit criteria**
+- Cold start and edit responsiveness meet targets in Section 11.
+- CI passes green across all supported operating systems.
 
 ---
 
