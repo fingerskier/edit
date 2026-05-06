@@ -28,3 +28,9 @@ npx cli text editor
 - Basic argument parsing for `--help` and `--version`
 - Renderer skeleton draws tree/editor/status layout
 - Command registry includes: `app.quit`, `palette.open`, `tree.focus`, `editor.focus`
+
+## Milestone 1 status
+- Added short flag aliases: `-h` and `-v`
+- Added workspace root resolution with de-duplication
+- Added startup validation for missing paths
+- Renderer now displays initial workspace context in the tree pane
