@@ -38,8 +38,8 @@ npx cli text editor
 ## Hotkeys and config
 Default hotkeys include:
 - `Alt+Up` / `Alt+Down`: navigate the directory tree
-- `Alt+Left` / `Alt+Right`: collapse / expand tree nodes
-- `Alt+Enter`: select highlighted file
+- `Alt+Left`: collapse tree nodes
+- `Alt+Right`: expand directories or open highlighted files
 - `Ctrl+O`: fuzzy quick open by path/name
 - `Ctrl+P`: command palette
 

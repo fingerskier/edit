@@ -75,7 +75,16 @@ export class EditorApp {
     });
     this.commands.register("tree.expand", () => {
       this.state.focusedRegion = "tree";
-      this.tree.expandHighlighted();
+      const highlighted = this.tree.highlightedEntry();
+      if (highlighted?.kind === "file") {
+        const selected = this.tree.selectHighlighted();
+        if (selected) {
+          this.state.currentFile = selected;
+          this.state.focusedRegion = "editor";
+        }
+      } else {
+        this.tree.expandHighlighted();
+      }
       this.render();
     });
     this.commands.register("tree.select", () => {

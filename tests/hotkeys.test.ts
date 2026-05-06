@@ -25,7 +25,6 @@ test("normalizes requested terminal hotkeys", () => {
   assert.equal(normalizeKeypress("\u001b[1;3B"), "alt+down");
   assert.equal(normalizeKeypress("\u001b[1;3D"), "alt+left");
   assert.equal(normalizeKeypress("\u001b[1;3C"), "alt+right");
-  assert.equal(normalizeKeypress("\u001b\r"), "alt+enter");
   assert.equal(normalizeKeypress("\u000f"), "ctrl+o");
   assert.equal(normalizeKeypress("\u0010"), "ctrl+p");
 });
@@ -41,7 +40,7 @@ test("keybindings are editable through JSON config", () => {
   assert.equal(keymap.commandForKey("ctrl+p"), "tree.select");
 });
 
-test("alt arrows navigate, expand, collapse, and alt enter selects files in tree", () => {
+test("alt arrows navigate, expand, collapse, and alt right opens files in tree", () => {
   const { root, cleanup } = fixtureWorkspace();
   try {
     const app = new EditorApp([root]);
@@ -58,7 +57,7 @@ test("alt arrows navigate, expand, collapse, and alt enter selects files in tree
 
     assert.equal(app.handleInput("\u001b[1;3B"), true);
     assert.equal(app.tree.highlightedEntry()?.label, "alpha.ts");
-    assert.equal(app.handleInput("\u001b\r"), true);
+    assert.equal(app.handleInput("\u001b[1;3C"), true);
     assert.equal(app.state.currentFile, path.join(root, "src", "alpha.ts"));
 
     assert.equal(app.handleInput("\u001b[1;3A"), true);
