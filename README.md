@@ -21,3 +21,10 @@ npx cli text editor
 - directory tree always visible
 - only one file editor at a time
 - keyboard mostly - base mouse fx
+
+## Milestone 0 status
+- TypeScript + Node CLI bootstrap scaffolded
+- `edit` binary declared in `package.json`
+- Basic argument parsing for `--help` and `--version`
+- Renderer skeleton draws tree/editor/status layout
+- Command registry includes: `app.quit`, `palette.open`, `tree.focus`, `editor.focus`
