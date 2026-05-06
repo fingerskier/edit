@@ -1,6 +1,6 @@
 {
   "name": "incune",
-  "version": "0.1.0",
+  "version": "2026.5.5",
   "description": "Lightning-fast cross-platform CLI text editor",
   "type": "module",
   "bin": {
