@@ -17,6 +17,14 @@ test("renderer is stable for identical input", () => {
   assert.equal(renderShellFrame(options), renderShellFrame(options));
 });
 
+test("renderer fills the requested terminal dimensions", () => {
+  const frame = renderShellFrame({ workspaceRoots: [process.cwd()], terminalSize: { columns: 100, rows: 30 } });
+  const lines = frame.split("\n");
+
+  assert.equal(lines.length, 30);
+  assert.ok(lines.every((line) => line.length === 100));
+});
+
 test("app lifecycle initializes, dispatches input commands, renders, and shuts down", () => {
   const app = new EditorApp([process.cwd()]);
   const quietOutput = { write: () => true, isTTY: false } as unknown as NodeJS.WriteStream;

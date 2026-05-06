@@ -2,6 +2,11 @@ import path from "node:path";
 import type { OverlayMode } from "./app.js";
 import type { SearchResult, TreeEntry } from "./workspace.js";
 
+export type TerminalSize = {
+  columns: number;
+  rows: number;
+};
+
 export type RenderOptions = {
   workspaceRoots?: string[];
   focusedRegion?: "tree" | "editor";
@@ -12,7 +17,13 @@ export type RenderOptions = {
   highlightedTreeIndex?: number;
   quickOpenQuery?: string;
   quickOpenResults?: SearchResult[];
+  terminalSize?: Partial<TerminalSize>;
 };
+
+const DEFAULT_COLUMNS = 80;
+const DEFAULT_ROWS = 24;
+const MIN_COLUMNS = 32;
+const MIN_ROWS = 6;
 
 export function renderShellFrame(options: RenderOptions | string[] = {}): string {
   const normalized: RenderOptions = Array.isArray(options) ? { workspaceRoots: options } : options;
@@ -20,51 +31,115 @@ export function renderShellFrame(options: RenderOptions | string[] = {}): string
   const focusedRegion = normalized.focusedRegion ?? "editor";
   const overlayMode = normalized.overlayMode ?? (normalized.paletteOpen ? "palette" : "none");
   const currentFile = normalized.currentFile;
-  const treeLines = renderTreeLines(normalized.treeEntries, normalized.highlightedTreeIndex ?? 0, workspaceRoots, focusedRegion);
+  const size = normalizeTerminalSize(normalized.terminalSize);
+  const { treeWidth, editorWidth } = layoutWidths(size.columns);
+  const contentRows = size.rows - 5;
+  const treeLines = renderTreeLines(
+    normalized.treeEntries,
+    normalized.highlightedTreeIndex ?? 0,
+    workspaceRoots,
+    focusedRegion,
+    treeWidth,
+    contentRows
+  );
   const editorTitle = currentFile ? path.basename(currentFile) : "<open file to start>";
   const editorPrefix = focusedRegion === "editor" ? ">" : " ";
-  const editorLine = `${editorPrefix} ${editorTitle}`.slice(0, 30).padEnd(30, " ");
-  const overlayLine = renderOverlayLine(overlayMode, normalized.quickOpenQuery ?? "", normalized.quickOpenResults ?? []);
+  const editorLine = fitText(`${editorPrefix} ${editorTitle}`, editorWidth);
+  const emptyEditorLine = " ".repeat(editorWidth);
+  const overlayLine = borderedLine(renderOverlayText(overlayMode, normalized.quickOpenQuery ?? "", normalized.quickOpenResults ?? []), size.columns);
   const statusFile = currentFile ? path.basename(currentFile) : "<none>";
+  const statusLine = borderedLine(`Status: NORMAL | File: ${statusFile} | Ln 1, Col 1 | clean`, size.columns);
 
-  return [
-    "┌──────── Tree ────────┬──────────── Editor ────────────┐",
-    `│ ${treeLines[0]} │ ${editorLine} │`,
-    `│ ${treeLines[1]} │                                │`,
-    `│ ${treeLines[2]} │                                │`,
-    "├──────────────────────┴────────────────────────────────┤",
-    overlayLine,
-    `│ Status: NORMAL | File: ${statusFile}`.slice(0, 56).padEnd(56, " ") + "│",
-    "└───────────────────────────────────────────────────────┘"
-  ].join("\n");
+  const lines = [topBorder(treeWidth, editorWidth)];
+  for (let index = 0; index < contentRows; index += 1) {
+    lines.push(`│${treeLines[index]}│${index === 0 ? editorLine : emptyEditorLine}│`);
+  }
+  lines.push(separatorBorder(size.columns));
+  lines.push(overlayLine);
+  lines.push(statusLine);
+  lines.push(bottomBorder(size.columns));
+
+  return lines.join("\n");
 }
 
-function renderTreeLines(entries: TreeEntry[] | undefined, highlightedIndex: number, workspaceRoots: string[], focusedRegion: "tree" | "editor"): string[] {
+function normalizeTerminalSize(size: Partial<TerminalSize> | undefined): TerminalSize {
+  return {
+    columns: Math.max(MIN_COLUMNS, Math.floor(size?.columns ?? DEFAULT_COLUMNS)),
+    rows: Math.max(MIN_ROWS, Math.floor(size?.rows ?? DEFAULT_ROWS))
+  };
+}
+
+function layoutWidths(columns: number): { treeWidth: number; editorWidth: number } {
+  const available = columns - 3;
+  const treeWidth = Math.min(40, Math.max(20, Math.floor(columns * 0.3), Math.min(available - 10, 20)));
+  return { treeWidth, editorWidth: available - treeWidth };
+}
+
+function renderTreeLines(
+  entries: TreeEntry[] | undefined,
+  highlightedIndex: number,
+  workspaceRoots: string[],
+  focusedRegion: "tree" | "editor",
+  width: number,
+  count: number
+): string[] {
   const fallbackLabel = workspaceRoots.length > 0 ? workspaceRoots[0] : "<no workspace>";
   const fallback = `${focusedRegion === "tree" ? ">" : " "} ${fallbackLabel}`;
   const source = entries && entries.length > 0 ? entries : [{ label: fallback, depth: 0, kind: "directory", expanded: true, path: fallback } as TreeEntry];
+  const maxStart = Math.max(0, source.length - count);
+  const start = Math.max(0, Math.min(maxStart, highlightedIndex - count + 1));
 
-  return [0, 1, 2].map((slot) => {
-    const entry = source[slot];
+  return Array.from({ length: count }, (_, slot) => {
+    const entryIndex = start + slot;
+    const entry = source[entryIndex];
     if (!entry) {
-      return " ".repeat(20);
+      return " ".repeat(width);
     }
-    const highlight = slot === highlightedIndex ? ">" : " ";
+    const highlight = entryIndex === highlightedIndex ? ">" : " ";
     const icon = entry.kind === "directory" ? (entry.expanded ? "▾" : "▸") : " ";
-    const indent = " ".repeat(Math.min(entry.depth * 2, 4));
-    return `${highlight}${indent}${icon} ${entry.label}`.slice(0, 20).padEnd(20, " ");
+    const indent = " ".repeat(Math.min(entry.depth * 2, Math.max(0, width - 4)));
+    return fitText(`${highlight}${indent}${icon} ${entry.label}`, width);
   });
 }
 
-function renderOverlayLine(mode: OverlayMode, query: string, results: SearchResult[]): string {
+function renderOverlayText(mode: OverlayMode, query: string, results: SearchResult[]): string {
   if (mode === "palette") {
-    return "│ Palette: type a command                                  │";
+    return "Palette: type a command";
   }
 
   if (mode === "quickOpen") {
     const first = results[0]?.label ?? "<no matches>";
-    return `│ Quick Open: ${query} -> ${first}`.slice(0, 56).padEnd(56, " ") + "│";
+    return `Quick Open: ${query} -> ${first}`;
   }
 
-  return "│ Palette: <closed> | Ctrl+O quick open | Ctrl+P commands │";
+  return "Palette: <closed> | Ctrl+O quick open | Ctrl+P commands";
+}
+
+function topBorder(treeWidth: number, editorWidth: number): string {
+  return `┌${titleSegment(" Tree ", treeWidth)}┬${titleSegment(" Editor ", editorWidth)}┐`;
+}
+
+function separatorBorder(columns: number): string {
+  return `├${"─".repeat(columns - 2)}┤`;
+}
+
+function bottomBorder(columns: number): string {
+  return `└${"─".repeat(columns - 2)}┘`;
+}
+
+function borderedLine(text: string, columns: number): string {
+  return `│${fitText(text, columns - 2)}│`;
+}
+
+function titleSegment(title: string, width: number): string {
+  if (width <= title.length) {
+    return title.slice(0, width);
+  }
+  const left = Math.floor((width - title.length) / 2);
+  const right = width - title.length - left;
+  return `${"─".repeat(left)}${title}${"─".repeat(right)}`;
+}
+
+function fitText(text: string, width: number): string {
+  return text.slice(0, width).padEnd(width, " ");
 }

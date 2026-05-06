@@ -114,6 +114,7 @@ export class EditorApp {
     this.input.resume();
     this.input.setEncoding("utf8");
     this.input.on("data", this.onInput);
+    process.on("SIGWINCH", this.onResize);
 
     this.render();
     this.renderTimer = setInterval(() => this.render(), 1000);
@@ -137,12 +138,13 @@ export class EditorApp {
       treeEntries: this.tree.visibleEntries(),
       highlightedTreeIndex: this.tree.highlightedIndex,
       quickOpenQuery: this.state.quickOpenQuery,
-      quickOpenResults: this.state.quickOpenResults
+      quickOpenResults: this.state.quickOpenResults,
+      terminalSize: this.terminalSize()
     });
   }
 
   render(): void {
-    this.output?.write(`\x1b[H\x1b[2J${this.renderFrame()}\n`);
+    this.output?.write(`\x1b[H\x1b[2J${this.renderFrame()}`);
   }
 
   shutdown(): void {
@@ -164,6 +166,7 @@ export class EditorApp {
       this.rawModeEnabled = false;
       this.input.pause();
     }
+    process.off("SIGWINCH", this.onResize);
 
     if (this.output?.isTTY) {
       this.output.write("\x1b[?25h\x1b[?1049l");
@@ -209,6 +212,17 @@ export class EditorApp {
 
     return false;
   }
+
+  private terminalSize(): { columns: number; rows: number } {
+    return {
+      columns: this.output?.columns ?? process.stdout.columns ?? 80,
+      rows: this.output?.rows ?? process.stdout.rows ?? 24
+    };
+  }
+
+  private readonly onResize = (): void => {
+    this.render();
+  };
 
   private readonly onInput = (chunk: Buffer | string): void => {
     this.handleInput(String(chunk));
