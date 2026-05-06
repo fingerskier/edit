@@ -1,10 +1,10 @@
 {
-  "name": "tatter",
+  "name": "incune",
   "version": "0.1.0",
   "description": "Lightning-fast cross-platform CLI text editor",
   "type": "module",
   "bin": {
-    "tatter": "dist/cli.js"
+    "incune": "dist/cli.js"
   },
   "files": [
     "dist"
