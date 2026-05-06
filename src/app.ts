@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import process from "node:process";
 import { createDefaultCommandRegistry, type CommandRegistry } from "./commands.js";
 import { Keymap } from "./keymap.js";
@@ -15,6 +16,7 @@ export type AppState = {
   quickOpenQuery: string;
   quickOpenResults: SearchResult[];
   currentFile?: string;
+  currentFileContent: string;
 };
 
 export class EditorApp {
@@ -36,7 +38,8 @@ export class EditorApp {
       focusedRegion: "editor",
       overlayMode: "none",
       quickOpenQuery: "",
-      quickOpenResults: []
+      quickOpenResults: [],
+      currentFileContent: ""
     };
 
     this.commands = createDefaultCommandRegistry(() => this.shutdown());
@@ -79,7 +82,7 @@ export class EditorApp {
       if (highlighted?.kind === "file") {
         const selected = this.tree.selectHighlighted();
         if (selected) {
-          this.state.currentFile = selected;
+          this.openFile(selected);
           this.state.focusedRegion = "editor";
         }
       } else {
@@ -91,7 +94,7 @@ export class EditorApp {
       this.state.focusedRegion = "tree";
       const selected = this.tree.selectHighlighted();
       if (selected) {
-        this.state.currentFile = selected;
+        this.openFile(selected);
         this.state.focusedRegion = "editor";
       }
       this.render();
@@ -144,6 +147,7 @@ export class EditorApp {
       focusedRegion: this.state.focusedRegion,
       overlayMode: this.state.overlayMode,
       currentFile: this.state.currentFile,
+      currentFileContent: this.state.currentFileContent,
       treeEntries: this.tree.visibleEntries(),
       highlightedTreeIndex: this.tree.highlightedIndex,
       quickOpenQuery: this.state.quickOpenQuery,
@@ -197,7 +201,7 @@ export class EditorApp {
       if (data === "\r" || data === "\n") {
         const selected = this.state.quickOpenResults[0];
         if (selected) {
-          this.state.currentFile = selected.path;
+          this.openFile(selected.path);
         }
         this.state.overlayMode = "none";
         this.render();
@@ -220,6 +224,15 @@ export class EditorApp {
     }
 
     return false;
+  }
+
+  private openFile(file: string): void {
+    this.state.currentFile = file;
+    try {
+      this.state.currentFileContent = fs.readFileSync(file, "utf8");
+    } catch (error) {
+      this.state.currentFileContent = `Unable to read file: ${error instanceof Error ? error.message : String(error)}`;
+    }
   }
 
   private terminalSize(): { columns: number; rows: number } {

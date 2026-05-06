@@ -11,8 +11,8 @@ import { WorkspaceTree, fuzzyScore } from "../src/workspace.js";
 function fixtureWorkspace(): { root: string; cleanup: () => void } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "edit-hotkeys-"));
   fs.mkdirSync(path.join(root, "src"));
-  fs.writeFileSync(path.join(root, "src", "alpha.ts"), "alpha");
-  fs.writeFileSync(path.join(root, "beta.md"), "beta");
+  fs.writeFileSync(path.join(root, "src", "alpha.ts"), "const alphaValue = 1;\nconsole.log(alphaValue);\n");
+  fs.writeFileSync(path.join(root, "beta.md"), "## beta doc\n");
   return { root, cleanup: () => fs.rmSync(root, { recursive: true, force: true }) };
 }
 
@@ -59,6 +59,8 @@ test("alt arrows navigate, expand, collapse, and alt right opens files in tree",
     assert.equal(app.tree.highlightedEntry()?.label, "alpha.ts");
     assert.equal(app.handleInput("\u001b[1;3C"), true);
     assert.equal(app.state.currentFile, path.join(root, "src", "alpha.ts"));
+    assert.match(app.renderFrame(), /const alphaValue = 1;/);
+    assert.match(app.renderFrame(), /console\.log\(alphaValue\);/);
 
     assert.equal(app.handleInput("\u001b[1;3A"), true);
     assert.equal(app.tree.highlightedEntry()?.label, "src");

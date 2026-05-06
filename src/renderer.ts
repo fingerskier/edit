@@ -13,6 +13,7 @@ export type RenderOptions = {
   overlayMode?: OverlayMode;
   paletteOpen?: boolean;
   currentFile?: string;
+  currentFileContent?: string;
   treeEntries?: TreeEntry[];
   highlightedTreeIndex?: number;
   quickOpenQuery?: string;
@@ -42,17 +43,14 @@ export function renderShellFrame(options: RenderOptions | string[] = {}): string
     treeWidth,
     contentRows
   );
-  const editorTitle = currentFile ? path.basename(currentFile) : "<open file to start>";
-  const editorPrefix = focusedRegion === "editor" ? ">" : " ";
-  const editorLine = fitText(`${editorPrefix} ${editorTitle}`, editorWidth);
-  const emptyEditorLine = " ".repeat(editorWidth);
+  const editorLines = renderEditorLines(currentFile, normalized.currentFileContent, focusedRegion, editorWidth, contentRows);
   const overlayLine = borderedLine(renderOverlayText(overlayMode, normalized.quickOpenQuery ?? "", normalized.quickOpenResults ?? []), size.columns);
   const statusFile = currentFile ? path.basename(currentFile) : "<none>";
   const statusLine = borderedLine(`Status: NORMAL | File: ${statusFile} | Ln 1, Col 1 | clean`, size.columns);
 
   const lines = [topBorder(treeWidth, editorWidth)];
   for (let index = 0; index < contentRows; index += 1) {
-    lines.push(`│${treeLines[index]}│${index === 0 ? editorLine : emptyEditorLine}│`);
+    lines.push(`│${treeLines[index]}│${editorLines[index]}│`);
   }
   lines.push(separatorBorder(size.columns));
   lines.push(overlayLine);
@@ -100,6 +98,37 @@ function renderTreeLines(
     const indent = " ".repeat(Math.min(entry.depth * 2, Math.max(0, width - 4)));
     return fitText(`${highlight}${indent}${icon} ${entry.label}`, width);
   });
+}
+
+function renderEditorLines(
+  currentFile: string | undefined,
+  content: string | undefined,
+  focusedRegion: "tree" | "editor",
+  width: number,
+  count: number
+): string[] {
+  const editorTitle = currentFile ? path.basename(currentFile) : "<open file to start>";
+  const editorPrefix = focusedRegion === "editor" ? ">" : " ";
+  const lines = [fitText(`${editorPrefix} ${editorTitle}`, width)];
+
+  if (currentFile) {
+    for (const contentLine of splitEditorContent(content ?? "")) {
+      if (lines.length >= count) {
+        break;
+      }
+      lines.push(fitText(`  ${contentLine}`, width));
+    }
+  }
+
+  while (lines.length < count) {
+    lines.push(" ".repeat(width));
+  }
+
+  return lines;
+}
+
+function splitEditorContent(content: string): string[] {
+  return content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
 }
 
 function renderOverlayText(mode: OverlayMode, query: string, results: SearchResult[]): string {
