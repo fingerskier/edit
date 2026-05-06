@@ -1,0 +1,153 @@
+# TODO: Milestone Implementation Plan (SPECIFICATION.md Part 15)
+
+This checklist breaks each milestone into actionable implementation steps.
+
+## M0 — Bootstrap
+- [ ] Create npm package scaffold:
+  - [ ] Initialize package metadata (`name`, `version`, `type`, `bin`).
+  - [ ] Add `bin` entry for `edit` command.
+  - [ ] Configure TypeScript compile target and output directories.
+  - [ ] Add runtime entrypoint and build scripts (`build`, `dev`, `start`).
+- [ ] Implement CLI interface:
+  - [ ] Parse `edit [paths...]`, `--help`, and `--version`.
+  - [ ] Validate unknown/invalid flags and return exit code `2`.
+  - [ ] Print readable usage/help text.
+- [ ] Implement app lifecycle boot sequence:
+  - [ ] `init` stage for loading config/runtime state.
+  - [ ] `render loop` stage for frame scheduling and input polling.
+  - [ ] `shutdown` stage for cleanup and terminal restore.
+- [ ] Build renderer skeleton:
+  - [ ] Define fixed layout regions: tree, editor, status, palette overlay.
+  - [ ] Render placeholder components for each region.
+  - [ ] Verify frame stability with no feature logic.
+- [ ] Add command registry foundation:
+  - [ ] Register `app.quit`, `palette.open`, `tree.focus`, `editor.focus`.
+  - [ ] Wire command dispatch from key/input events.
+  - [ ] Add minimal tests for registration + execution.
+- [ ] Exit criteria validation:
+  - [ ] Confirm `npx edit` launches stable TUI on macOS/Linux/Windows.
+  - [ ] Confirm unknown flags return code `2` and help text.
+
+## M1 — Core editing
+- [ ] Implement text buffer core:
+  - [ ] Build piece-table structure and storage.
+  - [ ] Implement insert/delete/replace operations.
+  - [ ] Add invariants and fuzz/property tests for buffer correctness.
+- [ ] Implement cursor + selection model:
+  - [ ] Single cursor movement primitives.
+  - [ ] Multi-cursor representation and normalization rules.
+  - [ ] Selection anchor/focus handling across edits.
+- [ ] Implement undo/redo history:
+  - [ ] Transaction model for grouped edits.
+  - [ ] Typing coalescing heuristics (time + cursor continuity).
+  - [ ] Undo/redo stack limits and branching behavior.
+- [ ] Implement file I/O + dirty tracking:
+  - [ ] Open file into buffer with encoding/newline handling.
+  - [ ] Save buffer to disk with atomic write strategy.
+  - [ ] Track dirty state transitions and reset on save/reload.
+- [ ] Wire status line:
+  - [ ] Show file name.
+  - [ ] Show row/column cursor position.
+  - [ ] Show dirty marker.
+- [ ] Exit criteria validation:
+  - [ ] Verify open/edit/undo/redo/save for files >= 5 MB.
+  - [ ] Benchmark keypress-to-render latency during sustained typing.
+
+## M2 — Workspace UX
+- [ ] Implement file tree UI:
+  - [ ] Always-visible panel and collapsible node model.
+  - [ ] Keyboard navigation (up/down/open/collapse/focus handoff).
+- [ ] Implement multi-root workspace:
+  - [ ] Accept multiple root paths from CLI.
+  - [ ] Normalize labels and resolve duplicate names.
+  - [ ] Render merged root list consistently.
+- [ ] Implement quick open:
+  - [ ] Build path indexer for workspace files.
+  - [ ] Add fuzzy matcher and scoring.
+  - [ ] Add keyboard-driven open flow.
+- [ ] Implement file watcher integration:
+  - [ ] Watch create/rename/delete/modify events.
+  - [ ] Debounce refresh and avoid event storms.
+  - [ ] Reconcile watcher state with tree/index state.
+- [ ] Handle external file changes:
+  - [ ] Auto-reload unchanged buffers.
+  - [ ] Prompt on conflicts when local buffer is dirty.
+  - [ ] Add conflict resolution actions (reload/keep/diff later).
+- [ ] Exit criteria validation:
+  - [ ] Verify unified roots render correctly for multiple paths.
+  - [ ] Verify live tree refresh for create/rename/delete without restart.
+
+## M3 — Power features
+- [ ] Implement command palette:
+  - [ ] Reusable modal UI + input model.
+  - [ ] Fuzzy command search and ranking.
+  - [ ] Command preview/help metadata support.
+- [ ] Implement chained hotkey resolver:
+  - [ ] Key chord state machine (`Ctrl+K` style prefixes).
+  - [ ] Timeout/cancel behavior for partial chords.
+  - [ ] Context predicates for scope-aware key handling.
+- [ ] Implement custom keymap loading:
+  - [ ] Load user keymap config file.
+  - [ ] Validate schema and command existence.
+  - [ ] Detect/report binding conflicts with warnings.
+- [ ] Implement clipboard history ring:
+  - [ ] Ring buffer store with configurable maximum size.
+  - [ ] Copy/cut integration hooks.
+  - [ ] Paste-from-history selection command.
+- [ ] Implement theme loader/editor flow:
+  - [ ] Load theme definitions from config files.
+  - [ ] Apply theme styles to all regions.
+  - [ ] Watch theme file and live-reload on save.
+- [ ] Exit criteria validation:
+  - [ ] Verify command remapping works for critical editor/tree/palette actions.
+  - [ ] Verify palette can invoke every registered command.
+
+## M4 — LSP
+- [ ] Implement LSP process manager:
+  - [ ] Start/initialize/shutdown lifecycle.
+  - [ ] Crash detection and reconnect strategy.
+  - [ ] Per-workspace/per-language server routing.
+- [ ] Implement document sync:
+  - [ ] Version counters per document.
+  - [ ] Incremental change events from edit operations.
+  - [ ] Open/close/save notifications.
+- [ ] Surface diagnostics:
+  - [ ] Parse/persist diagnostics by URI + version.
+  - [ ] Render inline markers.
+  - [ ] Aggregate status line summary.
+- [ ] Implement navigation/intel commands:
+  - [ ] Go-to-definition.
+  - [ ] Hover details.
+  - [ ] Document symbols navigation.
+- [ ] Add resiliency guards:
+  - [ ] Request timeout handling.
+  - [ ] Staleness checks for out-of-date responses.
+  - [ ] Non-blocking failure paths to preserve editor input.
+- [ ] Exit criteria validation:
+  - [ ] Verify at least one mainstream server (e.g., TypeScript) end-to-end.
+  - [ ] Verify crash/restart path does not freeze input.
+
+## M5 — Hardening
+- [ ] Implement instrumentation:
+  - [ ] Add `--profile-startup` timing probes.
+  - [ ] Add `--profile-render` frame timing probes.
+  - [ ] Export profile results in machine-readable + human-readable formats.
+- [ ] Optimize performance hotspots:
+  - [ ] Large-file editing path profiling and optimization.
+  - [ ] Deep tree rendering and virtualization optimizations.
+  - [ ] Reduce allocations in hot input/render loops.
+- [ ] Validate cross-platform keys:
+  - [ ] Normalize modifier mapping for macOS/Linux/Windows.
+  - [ ] Build compatibility test matrix for key combinations.
+  - [ ] Fix edge cases in terminal-specific key encoding.
+- [ ] Build CI matrix:
+  - [ ] Add unit test workflow for all supported OS families.
+  - [ ] Add integration + smoke tests with representative fixtures.
+  - [ ] Enforce required checks before release.
+- [ ] Prepare release operations:
+  - [ ] Define npm publish checklist.
+  - [ ] Define semantic versioning and changelog process.
+  - [ ] Define rollback and hotfix plan.
+- [ ] Exit criteria validation:
+  - [ ] Confirm cold start/edit responsiveness meets Section 11 targets.
+  - [ ] Confirm CI is green across supported operating systems.
