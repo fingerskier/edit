@@ -25,6 +25,10 @@ test("default command registry contains milestone 0 commands", () => {
   assert.deepEqual(registry.list(), [
     "app.quit",
     "editor.focus",
+    "editor.navigate.down",
+    "editor.navigate.left",
+    "editor.navigate.right",
+    "editor.navigate.up",
     "palette.open",
     "quickOpen.open",
     "tree.collapse",

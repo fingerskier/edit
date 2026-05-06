@@ -17,6 +17,9 @@ export type AppState = {
   quickOpenResults: SearchResult[];
   currentFile?: string;
   currentFileContent: string;
+  cursorLine: number;
+  cursorColumn: number;
+  editorScrollLine: number;
 };
 
 export class EditorApp {
@@ -39,7 +42,10 @@ export class EditorApp {
       overlayMode: "none",
       quickOpenQuery: "",
       quickOpenResults: [],
-      currentFileContent: ""
+      currentFileContent: "",
+      cursorLine: 0,
+      cursorColumn: 0,
+      editorScrollLine: 0
     };
 
     this.commands = createDefaultCommandRegistry(() => this.shutdown());
@@ -61,6 +67,10 @@ export class EditorApp {
       this.state.focusedRegion = "editor";
       this.render();
     });
+    this.commands.register("editor.navigate.up", () => this.navigateEditor(-1, 0));
+    this.commands.register("editor.navigate.down", () => this.navigateEditor(1, 0));
+    this.commands.register("editor.navigate.left", () => this.navigateEditor(0, -1));
+    this.commands.register("editor.navigate.right", () => this.navigateEditor(0, 1));
     this.commands.register("tree.navigate.up", () => {
       this.state.focusedRegion = "tree";
       this.tree.moveHighlight(-1);
@@ -148,6 +158,9 @@ export class EditorApp {
       overlayMode: this.state.overlayMode,
       currentFile: this.state.currentFile,
       currentFileContent: this.state.currentFileContent,
+      cursorLine: this.state.cursorLine,
+      cursorColumn: this.state.cursorColumn,
+      editorScrollLine: this.state.editorScrollLine,
       treeEntries: this.tree.visibleEntries(),
       highlightedTreeIndex: this.tree.highlightedIndex,
       quickOpenQuery: this.state.quickOpenQuery,
@@ -233,6 +246,62 @@ export class EditorApp {
     } catch (error) {
       this.state.currentFileContent = `Unable to read file: ${error instanceof Error ? error.message : String(error)}`;
     }
+    this.state.cursorLine = 0;
+    this.state.cursorColumn = 0;
+    this.state.editorScrollLine = 0;
+  }
+
+  private navigateEditor(lineDelta: number, columnDelta: number): void {
+    if (!this.state.currentFile) {
+      return;
+    }
+
+    const lines = splitFileContent(this.state.currentFileContent);
+    const maxLine = Math.max(0, lines.length - 1);
+    let line = clamp(this.state.cursorLine, 0, maxLine);
+    let column = clamp(this.state.cursorColumn, 0, lineLength(lines[line] ?? ""));
+
+    if (lineDelta !== 0) {
+      line = clamp(line + lineDelta, 0, maxLine);
+      column = Math.min(column, lineLength(lines[line] ?? ""));
+    }
+
+    if (columnDelta < 0) {
+      if (column > 0) {
+        column -= 1;
+      } else if (line > 0) {
+        line -= 1;
+        column = lineLength(lines[line] ?? "");
+      }
+    } else if (columnDelta > 0) {
+      const currentLineLength = lineLength(lines[line] ?? "");
+      if (column < currentLineLength) {
+        column += 1;
+      } else if (line < maxLine) {
+        line += 1;
+        column = 0;
+      }
+    }
+
+    this.state.cursorLine = line;
+    this.state.cursorColumn = column;
+    this.state.focusedRegion = "editor";
+    this.ensureEditorCursorVisible(lines.length);
+    this.render();
+  }
+
+  private ensureEditorCursorVisible(totalLines: number): void {
+    const visibleContentRows = Math.max(1, this.terminalSize().rows - 6);
+    const maxScrollLine = Math.max(0, totalLines - visibleContentRows);
+    let scrollLine = clamp(this.state.editorScrollLine, 0, maxScrollLine);
+
+    if (this.state.cursorLine < scrollLine) {
+      scrollLine = this.state.cursorLine;
+    } else if (this.state.cursorLine >= scrollLine + visibleContentRows) {
+      scrollLine = this.state.cursorLine - visibleContentRows + 1;
+    }
+
+    this.state.editorScrollLine = clamp(scrollLine, 0, maxScrollLine);
   }
 
   private terminalSize(): { columns: number; rows: number } {
@@ -249,4 +318,16 @@ export class EditorApp {
   private readonly onInput = (chunk: Buffer | string): void => {
     this.handleInput(String(chunk));
   };
+}
+
+function splitFileContent(content: string): string[] {
+  return content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+}
+
+function lineLength(line: string): number {
+  return line.length;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }

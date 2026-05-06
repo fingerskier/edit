@@ -14,6 +14,9 @@ export type RenderOptions = {
   paletteOpen?: boolean;
   currentFile?: string;
   currentFileContent?: string;
+  cursorLine?: number;
+  cursorColumn?: number;
+  editorScrollLine?: number;
   treeEntries?: TreeEntry[];
   highlightedTreeIndex?: number;
   quickOpenQuery?: string;
@@ -32,6 +35,9 @@ export function renderShellFrame(options: RenderOptions | string[] = {}): string
   const focusedRegion = normalized.focusedRegion ?? "editor";
   const overlayMode = normalized.overlayMode ?? (normalized.paletteOpen ? "palette" : "none");
   const currentFile = normalized.currentFile;
+  const cursorLine = normalizePosition(normalized.cursorLine);
+  const cursorColumn = normalizePosition(normalized.cursorColumn);
+  const editorScrollLine = normalizePosition(normalized.editorScrollLine);
   const size = normalizeTerminalSize(normalized.terminalSize);
   const { treeWidth, editorWidth } = layoutWidths(size.columns);
   const contentRows = size.rows - 5;
@@ -43,10 +49,18 @@ export function renderShellFrame(options: RenderOptions | string[] = {}): string
     treeWidth,
     contentRows
   );
-  const editorLines = renderEditorLines(currentFile, normalized.currentFileContent, focusedRegion, editorWidth, contentRows);
+  const editorLines = renderEditorLines(
+    currentFile,
+    normalized.currentFileContent,
+    focusedRegion,
+    editorScrollLine,
+    cursorLine,
+    editorWidth,
+    contentRows
+  );
   const overlayLine = borderedLine(renderOverlayText(overlayMode, normalized.quickOpenQuery ?? "", normalized.quickOpenResults ?? []), size.columns);
   const statusFile = currentFile ? path.basename(currentFile) : "<none>";
-  const statusLine = borderedLine(`Status: NORMAL | File: ${statusFile} | Ln 1, Col 1 | clean`, size.columns);
+  const statusLine = borderedLine(`Status: NORMAL | File: ${statusFile} | Ln ${cursorLine + 1}, Col ${cursorColumn + 1} | clean`, size.columns);
 
   const lines = [topBorder(treeWidth, editorWidth)];
   for (let index = 0; index < contentRows; index += 1) {
@@ -65,6 +79,10 @@ function normalizeTerminalSize(size: Partial<TerminalSize> | undefined): Termina
     columns: Math.max(MIN_COLUMNS, Math.floor(size?.columns ?? DEFAULT_COLUMNS)),
     rows: Math.max(MIN_ROWS, Math.floor(size?.rows ?? DEFAULT_ROWS))
   };
+}
+
+function normalizePosition(position: number | undefined): number {
+  return Math.max(0, Math.floor(position ?? 0));
 }
 
 function layoutWidths(columns: number): { treeWidth: number; editorWidth: number } {
@@ -104,6 +122,8 @@ function renderEditorLines(
   currentFile: string | undefined,
   content: string | undefined,
   focusedRegion: "tree" | "editor",
+  scrollLine: number,
+  cursorLine: number,
   width: number,
   count: number
 ): string[] {
@@ -112,11 +132,14 @@ function renderEditorLines(
   const lines = [fitText(`${editorPrefix} ${editorTitle}`, width)];
 
   if (currentFile) {
-    for (const contentLine of splitEditorContent(content ?? "")) {
-      if (lines.length >= count) {
-        break;
-      }
-      lines.push(fitText(`  ${contentLine}`, width));
+    const contentLines = splitEditorContent(content ?? "");
+    const visibleContentRows = Math.max(0, count - 1);
+    const maxScrollLine = Math.max(0, contentLines.length - visibleContentRows);
+    const firstLine = Math.max(0, Math.min(scrollLine, maxScrollLine));
+
+    for (let contentIndex = firstLine; lines.length < count && contentIndex < contentLines.length; contentIndex += 1) {
+      const cursorMarker = contentIndex === cursorLine ? ">" : " ";
+      lines.push(fitText(`${cursorMarker} ${contentLines[contentIndex]}`, width));
     }
   }
 

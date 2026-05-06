@@ -37,6 +37,7 @@ npx cli text editor
 
 ## Hotkeys and config
 Default hotkeys include:
+- `Arrow keys`: navigate the open file
 - `Alt+Up` / `Alt+Down`: navigate the directory tree
 - `Alt+Left`: collapse tree nodes
 - `Alt+Right`: expand directories or open highlighted files

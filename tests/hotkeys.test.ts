@@ -25,6 +25,12 @@ test("normalizes requested terminal hotkeys", () => {
   assert.equal(normalizeKeypress("\u001b[1;3B"), "alt+down");
   assert.equal(normalizeKeypress("\u001b[1;3D"), "alt+left");
   assert.equal(normalizeKeypress("\u001b[1;3C"), "alt+right");
+  assert.equal(normalizeKeypress("\u001b[A"), "up");
+  assert.equal(normalizeKeypress("\u001b[B"), "down");
+  assert.equal(normalizeKeypress("\u001b[D"), "left");
+  assert.equal(normalizeKeypress("\u001b[C"), "right");
+  assert.equal(normalizeKeypress("\u001bOA"), "up");
+  assert.equal(normalizeKeypress("\u001bOB"), "down");
   assert.equal(normalizeKeypress("\u000f"), "ctrl+o");
   assert.equal(normalizeKeypress("\u0010"), "ctrl+p");
 });
@@ -66,6 +72,40 @@ test("alt arrows navigate, expand, collapse, and alt right opens files in tree",
     assert.equal(app.tree.highlightedEntry()?.label, "src");
     assert.equal(app.handleInput("\u001b[1;3D"), true);
     assert.equal(app.tree.highlightedEntry()?.expanded, false);
+  } finally {
+    cleanup();
+  }
+});
+
+test("plain arrows navigate the open file cursor", () => {
+  const { root, cleanup } = fixtureWorkspace();
+  try {
+    const app = new EditorApp([root]);
+    app.init(process.stdin, quietOutput());
+
+    assert.equal(app.handleInput("\u000f"), true);
+    assert.equal(app.handleInput("a"), true);
+    assert.equal(app.handleInput("\r"), true);
+    assert.equal(app.state.currentFile, path.join(root, "src", "alpha.ts"));
+    assert.equal(app.state.cursorLine, 0);
+    assert.equal(app.state.cursorColumn, 0);
+
+    assert.equal(app.handleInput("\u001b[C"), true);
+    assert.equal(app.state.cursorLine, 0);
+    assert.equal(app.state.cursorColumn, 1);
+    assert.match(app.renderFrame(), /Ln 1, Col 2/);
+
+    assert.equal(app.handleInput("\u001b[B"), true);
+    assert.equal(app.state.cursorLine, 1);
+    assert.equal(app.state.cursorColumn, 1);
+    assert.match(app.renderFrame(), /> console\.log\(alphaValue\);/);
+    assert.match(app.renderFrame(), /Ln 2, Col 2/);
+
+    assert.equal(app.handleInput("\u001b[D"), true);
+    assert.equal(app.state.cursorColumn, 0);
+    assert.equal(app.handleInput("\u001b[A"), true);
+    assert.equal(app.state.cursorLine, 0);
+    assert.match(app.renderFrame(), /Ln 1, Col 1/);
   } finally {
     cleanup();
   }

@@ -22,7 +22,7 @@ export type CliResult = {
 export const VERSION = "2026.5.5";
 
 export function usageText(): string {
-  return `edit ${VERSION}\n\nUsage:\n  edit [paths...]\n  edit --help\n  edit --version\n  edit --config <path> [paths...]\n\nOptions:\n  -h, --help      Show this help text\n  -v, --version   Print version and exit\n  --config <path> Load JSON config (default: ${defaultGlobalConfigPath()})\n\nKeys:\n  Alt+Up/Down     Navigate directory tree\n  Alt+Left        Collapse tree node\n  Alt+Right       Expand directory or open highlighted file\n  Ctrl+O          Fuzzy file search\n  Ctrl+P          Command palette\n  q / Ctrl+C      Quit\n\nExamples:\n  edit\n  edit .\n  edit --config ~/.edit/config.json src test`;
+  return `edit ${VERSION}\n\nUsage:\n  edit [paths...]\n  edit --help\n  edit --version\n  edit --config <path> [paths...]\n\nOptions:\n  -h, --help      Show this help text\n  -v, --version   Print version and exit\n  --config <path> Load JSON config (default: ${defaultGlobalConfigPath()})\n\nKeys:\n  Arrow keys      Navigate the open file\n  Alt+Up/Down     Navigate directory tree\n  Alt+Left        Collapse tree node\n  Alt+Right       Expand directory or open highlighted file\n  Ctrl+O          Fuzzy file search\n  Ctrl+P          Command palette\n  q / Ctrl+C      Quit\n\nExamples:\n  edit\n  edit .\n  edit --config ~/.edit/config.json src test`;
 }
 
 export function parseArgs(argv: string[]): CliResult {
