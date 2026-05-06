@@ -12,7 +12,7 @@ npx cli text editor
 - file-watcher auto-updates
 - auto-save
 - full undo/redo across all ops
-- generic syntax highlighting / linking based on text
+- LSP for syntax highlighting, linking, introspection
 - theme editing
 - command palette and chained hotkeys
 - piece-table text buffering
@@ -21,4 +21,3 @@ npx cli text editor
 - directory tree always visible
 - only one file editor at a time
 - keyboard mostly - base mouse fx
-
