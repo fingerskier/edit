@@ -4,7 +4,7 @@ import { EditorApp } from "../src/app.js";
 import { renderShellFrame } from "../src/renderer.js";
 
 test("renderer includes fixed tree, editor, status, and palette regions", () => {
-  const frame = renderShellFrame({ workspaceRoots: [process.cwd()], focusedRegion: "tree", paletteOpen: false });
+  const frame = renderShellFrame({ workspaceRoots: [process.cwd()], focusedRegion: "tree", overlayMode: "none" });
 
   assert.match(frame, /Tree/);
   assert.match(frame, /Editor/);
@@ -13,7 +13,7 @@ test("renderer includes fixed tree, editor, status, and palette regions", () => 
 });
 
 test("renderer is stable for identical input", () => {
-  const options = { workspaceRoots: [process.cwd()], focusedRegion: "editor" as const, paletteOpen: true };
+  const options = { workspaceRoots: [process.cwd()], focusedRegion: "editor" as const, overlayMode: "palette" as const };
   assert.equal(renderShellFrame(options), renderShellFrame(options));
 });
 
@@ -29,7 +29,7 @@ test("app lifecycle initializes, dispatches input commands, renders, and shuts d
   assert.equal(app.state.focusedRegion, "tree");
 
   assert.equal(app.handleInput("p"), true);
-  assert.equal(app.state.paletteOpen, true);
+  assert.equal(app.state.overlayMode, "palette");
   assert.match(app.renderFrame(), /Palette: type a command/);
 
   assert.equal(app.handleInput("q"), true);

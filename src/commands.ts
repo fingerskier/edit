@@ -26,7 +26,13 @@ export function createDefaultCommandRegistry(quit: () => void): CommandRegistry 
   const registry = new CommandRegistry();
   registry.register("app.quit", quit);
   registry.register("palette.open", () => {});
+  registry.register("quickOpen.open", () => {});
   registry.register("tree.focus", () => {});
+  registry.register("tree.navigate.up", () => {});
+  registry.register("tree.navigate.down", () => {});
+  registry.register("tree.collapse", () => {});
+  registry.register("tree.expand", () => {});
+  registry.register("tree.select", () => {});
   registry.register("editor.focus", () => {});
   return registry;
 }

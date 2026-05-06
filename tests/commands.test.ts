@@ -22,7 +22,18 @@ test("default command registry contains milestone 0 commands", () => {
     quit = true;
   });
 
-  assert.deepEqual(registry.list(), ["app.quit", "editor.focus", "palette.open", "tree.focus"]);
+  assert.deepEqual(registry.list(), [
+    "app.quit",
+    "editor.focus",
+    "palette.open",
+    "quickOpen.open",
+    "tree.collapse",
+    "tree.expand",
+    "tree.focus",
+    "tree.navigate.down",
+    "tree.navigate.up",
+    "tree.select"
+  ]);
   assert.equal(registry.execute("app.quit"), true);
   assert.equal(quit, true);
 });

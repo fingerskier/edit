@@ -34,3 +34,22 @@ npx cli text editor
 - Added workspace root resolution with de-duplication
 - Added startup validation for missing paths
 - Renderer now displays initial workspace context in the tree pane
+
+## Hotkeys and config
+Default hotkeys include:
+- `Alt+Up` / `Alt+Down`: navigate the directory tree
+- `Alt+Left` / `Alt+Right`: collapse / expand tree nodes
+- `Alt+Enter`: select highlighted file
+- `Ctrl+O`: fuzzy quick open by path/name
+- `Ctrl+P`: command palette
+
+Hotkeys can be edited in the global JSON config at `~/.edit/config.json` or via `edit --config <path>`:
+
+```json
+{
+  "keybindings": {
+    "ctrl+x": "quickOpen.open",
+    "ctrl+p": "palette.open"
+  }
+}
+```

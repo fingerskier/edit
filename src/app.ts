@@ -1,35 +1,53 @@
 import process from "node:process";
 import { createDefaultCommandRegistry, type CommandRegistry } from "./commands.js";
+import { Keymap } from "./keymap.js";
 import { renderShellFrame } from "./renderer.js";
+import { WorkspaceTree, type SearchResult } from "./workspace.js";
 
 export type FocusRegion = "tree" | "editor";
+export type OverlayMode = "none" | "palette" | "quickOpen";
 
 export type AppState = {
   workspaceRoots: string[];
   running: boolean;
   focusedRegion: FocusRegion;
-  paletteOpen: boolean;
+  overlayMode: OverlayMode;
+  quickOpenQuery: string;
+  quickOpenResults: SearchResult[];
+  currentFile?: string;
 };
 
 export class EditorApp {
   readonly state: AppState;
   readonly commands: CommandRegistry;
+  readonly keymap: Keymap;
+  readonly tree: WorkspaceTree;
   private input?: NodeJS.ReadStream;
   private output?: NodeJS.WriteStream;
   private renderTimer?: NodeJS.Timeout;
   private rawModeEnabled = false;
 
-  constructor(workspaceRoots: string[]) {
+  constructor(workspaceRoots: string[], keybindings: Record<string, string> = {}) {
+    this.tree = new WorkspaceTree(workspaceRoots);
+    this.keymap = new Keymap(keybindings);
     this.state = {
       workspaceRoots,
       running: false,
       focusedRegion: "editor",
-      paletteOpen: false
+      overlayMode: "none",
+      quickOpenQuery: "",
+      quickOpenResults: []
     };
 
     this.commands = createDefaultCommandRegistry(() => this.shutdown());
     this.commands.register("palette.open", () => {
-      this.state.paletteOpen = true;
+      this.state.overlayMode = "palette";
+      this.render();
+    });
+    this.commands.register("quickOpen.open", () => {
+      this.state.overlayMode = "quickOpen";
+      this.state.quickOpenQuery = "";
+      this.state.quickOpenResults = this.tree.searchFiles("");
       this.render();
     });
     this.commands.register("tree.focus", () => {
@@ -38,6 +56,35 @@ export class EditorApp {
     });
     this.commands.register("editor.focus", () => {
       this.state.focusedRegion = "editor";
+      this.render();
+    });
+    this.commands.register("tree.navigate.up", () => {
+      this.state.focusedRegion = "tree";
+      this.tree.moveHighlight(-1);
+      this.render();
+    });
+    this.commands.register("tree.navigate.down", () => {
+      this.state.focusedRegion = "tree";
+      this.tree.moveHighlight(1);
+      this.render();
+    });
+    this.commands.register("tree.collapse", () => {
+      this.state.focusedRegion = "tree";
+      this.tree.collapseHighlighted();
+      this.render();
+    });
+    this.commands.register("tree.expand", () => {
+      this.state.focusedRegion = "tree";
+      this.tree.expandHighlighted();
+      this.render();
+    });
+    this.commands.register("tree.select", () => {
+      this.state.focusedRegion = "tree";
+      const selected = this.tree.selectHighlighted();
+      if (selected) {
+        this.state.currentFile = selected;
+        this.state.focusedRegion = "editor";
+      }
       this.render();
     });
   }
@@ -73,30 +120,24 @@ export class EditorApp {
   }
 
   handleInput(data: string): boolean {
-    if (data === "q" || data === "\u0003") {
-      return this.commands.execute("app.quit");
+    if (this.handleOverlayInput(data)) {
+      return true;
     }
 
-    if (data === "p") {
-      return this.commands.execute("palette.open");
-    }
-
-    if (data === "t") {
-      return this.commands.execute("tree.focus");
-    }
-
-    if (data === "e") {
-      return this.commands.execute("editor.focus");
-    }
-
-    return false;
+    const command = this.keymap.commandForInput(data);
+    return command ? this.commands.execute(command) : false;
   }
 
   renderFrame(): string {
     return renderShellFrame({
       workspaceRoots: this.state.workspaceRoots,
       focusedRegion: this.state.focusedRegion,
-      paletteOpen: this.state.paletteOpen
+      overlayMode: this.state.overlayMode,
+      currentFile: this.state.currentFile,
+      treeEntries: this.tree.visibleEntries(),
+      highlightedTreeIndex: this.tree.highlightedIndex,
+      quickOpenQuery: this.state.quickOpenQuery,
+      quickOpenResults: this.state.quickOpenResults
     });
   }
 
@@ -127,6 +168,46 @@ export class EditorApp {
     if (this.output?.isTTY) {
       this.output.write("\x1b[?25h\x1b[?1049l");
     }
+  }
+
+  private handleOverlayInput(data: string): boolean {
+    if (this.state.overlayMode === "none") {
+      return false;
+    }
+
+    if (data === "\u001b") {
+      this.state.overlayMode = "none";
+      this.render();
+      return true;
+    }
+
+    if (this.state.overlayMode === "quickOpen") {
+      if (data === "\r" || data === "\n") {
+        const selected = this.state.quickOpenResults[0];
+        if (selected) {
+          this.state.currentFile = selected.path;
+        }
+        this.state.overlayMode = "none";
+        this.render();
+        return true;
+      }
+
+      if (data === "\u007f") {
+        this.state.quickOpenQuery = this.state.quickOpenQuery.slice(0, -1);
+        this.state.quickOpenResults = this.tree.searchFiles(this.state.quickOpenQuery);
+        this.render();
+        return true;
+      }
+
+      if (data.length === 1 && data >= " " && data <= "~") {
+        this.state.quickOpenQuery += data;
+        this.state.quickOpenResults = this.tree.searchFiles(this.state.quickOpenQuery);
+        this.render();
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private readonly onInput = (chunk: Buffer | string): void => {

@@ -55,16 +55,16 @@ This checklist breaks each milestone into actionable implementation steps.
 
 ## M2 — Workspace UX
 - [ ] Implement file tree UI:
-  - [ ] Always-visible panel and collapsible node model.
-  - [ ] Keyboard navigation (up/down/open/collapse/focus handoff).
+  - [x] Always-visible panel and collapsible node model.
+  - [x] Keyboard navigation (up/down/open/collapse/focus handoff).
 - [ ] Implement multi-root workspace:
   - [ ] Accept multiple root paths from CLI.
   - [ ] Normalize labels and resolve duplicate names.
   - [ ] Render merged root list consistently.
 - [ ] Implement quick open:
   - [ ] Build path indexer for workspace files.
-  - [ ] Add fuzzy matcher and scoring.
-  - [ ] Add keyboard-driven open flow.
+  - [x] Add fuzzy matcher and scoring.
+  - [x] Add keyboard-driven open flow.
 - [ ] Implement file watcher integration:
   - [ ] Watch create/rename/delete/modify events.
   - [ ] Debounce refresh and avoid event storms.
@@ -87,7 +87,7 @@ This checklist breaks each milestone into actionable implementation steps.
   - [ ] Timeout/cancel behavior for partial chords.
   - [ ] Context predicates for scope-aware key handling.
 - [ ] Implement custom keymap loading:
-  - [ ] Load user keymap config file.
+  - [x] Load user keymap config file.
   - [ ] Validate schema and command existence.
   - [ ] Detect/report binding conflicts with warnings.
 - [ ] Implement clipboard history ring:

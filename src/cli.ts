@@ -4,11 +4,13 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { EditorApp } from "./app.js";
+import { defaultGlobalConfigPath, loadConfig } from "./config.js";
 
 export type ParsedArgs = {
   paths: string[];
   help: boolean;
   version: boolean;
+  configPath?: string;
 };
 
 export type CliResult = {
@@ -20,13 +22,14 @@ export type CliResult = {
 export const VERSION = "2026.5.5";
 
 export function usageText(): string {
-  return `edit ${VERSION}\n\nUsage:\n  edit [paths...]\n  edit --help\n  edit --version\n\nOptions:\n  -h, --help      Show this help text\n  -v, --version   Print version and exit\n\nKeys:\n  q / Ctrl+C      Quit\n  p               Open command palette\n  t               Focus tree\n  e               Focus editor\n\nExamples:\n  edit\n  edit .\n  edit src test`;
+  return `edit ${VERSION}\n\nUsage:\n  edit [paths...]\n  edit --help\n  edit --version\n  edit --config <path> [paths...]\n\nOptions:\n  -h, --help      Show this help text\n  -v, --version   Print version and exit\n  --config <path> Load JSON config (default: ${defaultGlobalConfigPath()})\n\nKeys:\n  Alt+Up/Down     Navigate directory tree\n  Alt+Left/Right  Collapse/expand tree node\n  Alt+Enter       Select highlighted file\n  Ctrl+O          Fuzzy file search\n  Ctrl+P          Command palette\n  q / Ctrl+C      Quit\n\nExamples:\n  edit\n  edit .\n  edit --config ~/.edit/config.json src test`;
 }
 
 export function parseArgs(argv: string[]): CliResult {
   const parsed: ParsedArgs = { paths: [], help: false, version: false };
 
-  for (const arg of argv) {
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
     if (arg === "--help" || arg === "-h") {
       parsed.help = true;
       continue;
@@ -34,6 +37,16 @@ export function parseArgs(argv: string[]): CliResult {
 
     if (arg === "--version" || arg === "-v") {
       parsed.version = true;
+      continue;
+    }
+
+    if (arg === "--config") {
+      const configPath = argv[index + 1];
+      if (!configPath || configPath.startsWith("-")) {
+        return { exitCode: 2, error: "Missing value for --config" };
+      }
+      parsed.configPath = configPath;
+      index += 1;
       continue;
     }
 
@@ -93,7 +106,18 @@ export function run(argv: string[], stdout: NodeJS.WriteStream = process.stdout,
     return roots.exitCode;
   }
 
-  const app = new EditorApp(roots.roots);
+  let config;
+  try {
+    config = loadConfig(parsed.args.configPath);
+  } catch (error) {
+    stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    return 2;
+  }
+  for (const warning of config.warnings) {
+    stderr.write(`Config warning: ${warning}\n`);
+  }
+
+  const app = new EditorApp(roots.roots, config.keybindings);
   app.init(process.stdin, stdout);
   app.start();
   return 0;
