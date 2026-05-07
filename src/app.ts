@@ -233,7 +233,7 @@ export class EditorApp {
         return true;
       }
 
-      if (data === "\u007f") {
+      if (data === "\u007f" || data === "\b") {
         this.state.quickOpenQuery = this.state.quickOpenQuery.slice(0, -1);
         this.state.quickOpenResults = this.tree.searchFiles(this.state.quickOpenQuery);
         this.render();
@@ -266,7 +266,7 @@ export class EditorApp {
       return true;
     }
 
-    if (data === "\u007f") {
+    if (data === "\u007f" || data === "\b") {
       this.backspaceAtCursor();
       return true;
     }

@@ -25,6 +25,19 @@ test("renderer fills the requested terminal dimensions", () => {
   assert.ok(lines.every((line) => line.length === 100));
 });
 
+test("renderer shows an in-buffer cursor glyph at the cursor column", () => {
+  const frame = renderShellFrame({
+    focusedRegion: "editor",
+    currentFile: "note.txt",
+    currentFileContent: "alpha\n",
+    cursorLine: 0,
+    cursorColumn: 2,
+    terminalSize: { columns: 80, rows: 12 }
+  });
+
+  assert.match(frame, /al▌pha/);
+});
+
 test("app lifecycle initializes, dispatches input commands, renders, and shuts down", () => {
   const app = new EditorApp([process.cwd()]);
   const quietOutput = { write: () => true, isTTY: false } as unknown as NodeJS.WriteStream;

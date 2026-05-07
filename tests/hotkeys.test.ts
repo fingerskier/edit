@@ -98,7 +98,7 @@ test("plain arrows navigate the open file cursor", () => {
     assert.equal(app.handleInput("\u001b[B"), true);
     assert.equal(app.state.cursorLine, 1);
     assert.equal(app.state.cursorColumn, 1);
-    assert.match(app.renderFrame(), /> console\.log\(alphaValue\);/);
+    assert.match(app.renderFrame(), /> c▌onsole\.log\(alphaValue\);/);
     assert.match(app.renderFrame(), /Ln 2, Col 2/);
 
     assert.equal(app.handleInput("\u001b[D"), true);
@@ -120,7 +120,10 @@ test("ctrl+o opens fuzzy quick open and enter selects best file", () => {
     assert.equal(app.handleInput("\u000f"), true);
     assert.equal(app.state.overlayMode, "quickOpen");
     assert.equal(app.handleInput("a"), true);
+    assert.equal(app.handleInput("x"), true);
+    assert.equal(app.handleInput("\b"), true);
     assert.equal(app.handleInput("l"), true);
+    assert.equal(app.state.quickOpenQuery, "al");
     assert.equal(app.state.quickOpenResults[0]?.label, path.join("src", "alpha.ts"));
     assert.equal(app.handleInput("\r"), true);
     assert.equal(app.state.currentFile, path.join(root, "src", "alpha.ts"));

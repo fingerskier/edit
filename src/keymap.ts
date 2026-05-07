@@ -45,6 +45,7 @@ export function normalizeKeypress(data: string): string | undefined {
     ["\u0003", "ctrl+c"],
     ["\r", "enter"],
     ["\n", "enter"],
+    ["\b", "backspace"],
     ["\u007f", "backspace"]
   ]);
 

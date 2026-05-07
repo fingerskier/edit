@@ -57,6 +57,7 @@ export function renderShellFrame(options: RenderOptions | string[] = {}): string
     focusedRegion,
     editorScrollLine,
     cursorLine,
+    cursorColumn,
     editorWidth,
     contentRows
   );
@@ -126,6 +127,7 @@ function renderEditorLines(
   focusedRegion: "tree" | "editor",
   scrollLine: number,
   cursorLine: number,
+  cursorColumn: number,
   width: number,
   count: number
 ): string[] {
@@ -141,7 +143,8 @@ function renderEditorLines(
 
     for (let contentIndex = firstLine; lines.length < count && contentIndex < contentLines.length; contentIndex += 1) {
       const cursorMarker = contentIndex === cursorLine ? ">" : " ";
-      lines.push(fitText(`${cursorMarker} ${contentLines[contentIndex]}`, width));
+      const contentLine = contentIndex === cursorLine ? withCursorGlyph(contentLines[contentIndex], cursorColumn) : contentLines[contentIndex];
+      lines.push(fitText(`${cursorMarker} ${contentLine}`, width));
     }
   }
 
@@ -154,6 +157,11 @@ function renderEditorLines(
 
 function splitEditorContent(content: string): string[] {
   return content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+}
+
+function withCursorGlyph(line: string, column: number): string {
+  const cursorColumn = Math.max(0, Math.min(line.length, Math.floor(column)));
+  return `${line.slice(0, cursorColumn)}▌${line.slice(cursorColumn)}`;
 }
 
 function renderOverlayText(mode: OverlayMode, query: string, results: SearchResult[]): string {

@@ -27,6 +27,7 @@ test("normalizes core editing shortcuts", () => {
   assert.equal(normalizeKeypress("\u0013"), "ctrl+s");
   assert.equal(normalizeKeypress("\u001a"), "ctrl+z");
   assert.equal(normalizeKeypress("\u0019"), "ctrl+y");
+  assert.equal(normalizeKeypress("\b"), "backspace");
 });
 
 test("app edits the open file, tracks dirty state, undoes/redoes, and saves", () => {
@@ -77,6 +78,23 @@ test("app handles enter and backspace edits at the cursor", () => {
     assert.equal(app.state.cursorColumn, 0);
 
     assert.equal(app.handleInput("\u007f"), true);
+    assert.equal(app.state.currentFileContent, "alpha\n");
+    assert.equal(app.state.cursorLine, 0);
+    assert.equal(app.state.cursorColumn, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("app accepts ctrl-h backspace from terminals", () => {
+  const { root, cleanup } = fixtureWorkspace();
+  try {
+    const app = new EditorApp([root]);
+    app.init(process.stdin, quietOutput());
+    openAlpha(app);
+
+    assert.equal(app.handleInput("x"), true);
+    assert.equal(app.handleInput("\b"), true);
     assert.equal(app.state.currentFileContent, "alpha\n");
     assert.equal(app.state.cursorLine, 0);
     assert.equal(app.state.cursorColumn, 0);
