@@ -42,6 +42,8 @@ Default hotkeys include:
 - `Alt+Left`: collapse tree nodes
 - `Alt+Right`: expand directories or open highlighted files
 - `Ctrl+O`: fuzzy quick open by path/name
+- `Ctrl+S`: save the open file
+- `Ctrl+Z` / `Ctrl+Y`: undo / redo edits
 - `Ctrl+P`: command palette
 
 Hotkeys can be edited in the global JSON config at `~/.edit/config.json` or via `edit --config <path>`:

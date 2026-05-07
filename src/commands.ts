@@ -38,5 +38,8 @@ export function createDefaultCommandRegistry(quit: () => void): CommandRegistry 
   registry.register("editor.navigate.down", () => {});
   registry.register("editor.navigate.left", () => {});
   registry.register("editor.navigate.right", () => {});
+  registry.register("editor.save", () => {});
+  registry.register("editor.undo", () => {});
+  registry.register("editor.redo", () => {});
   return registry;
 }

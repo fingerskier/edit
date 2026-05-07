@@ -29,29 +29,29 @@ This checklist breaks each milestone into actionable implementation steps.
   - [x] Confirm unknown flags return code `2` and help text.
 
 ## M1 — Core editing
-- [ ] Implement text buffer core:
-  - [ ] Build piece-table structure and storage.
-  - [ ] Implement insert/delete/replace operations.
-  - [ ] Add invariants and fuzz/property tests for buffer correctness.
-- [ ] Implement cursor + selection model:
-  - [ ] Single cursor movement primitives.
-  - [ ] Multi-cursor representation and normalization rules.
-  - [ ] Selection anchor/focus handling across edits.
-- [ ] Implement undo/redo history:
-  - [ ] Transaction model for grouped edits.
-  - [ ] Typing coalescing heuristics (time + cursor continuity).
-  - [ ] Undo/redo stack limits and branching behavior.
-- [ ] Implement file I/O + dirty tracking:
-  - [ ] Open file into buffer with encoding/newline handling.
-  - [ ] Save buffer to disk with atomic write strategy.
-  - [ ] Track dirty state transitions and reset on save/reload.
-- [ ] Wire status line:
-  - [ ] Show file name.
-  - [ ] Show row/column cursor position.
-  - [ ] Show dirty marker.
-- [ ] Exit criteria validation:
-  - [ ] Verify open/edit/undo/redo/save for files >= 5 MB.
-  - [ ] Benchmark keypress-to-render latency during sustained typing.
+- [x] Implement text buffer core:
+  - [x] Build piece-table structure and storage.
+  - [x] Implement insert/delete/replace operations.
+  - [x] Add invariants and fuzz/property tests for buffer correctness.
+- [x] Implement cursor + selection model:
+  - [x] Single cursor movement primitives.
+  - [x] Multi-cursor representation and normalization rules.
+  - [x] Selection anchor/focus handling across edits.
+- [x] Implement undo/redo history:
+  - [x] Transaction model for grouped edits.
+  - [x] Typing coalescing heuristics (time + cursor continuity).
+  - [x] Undo/redo stack limits and branching behavior.
+- [x] Implement file I/O + dirty tracking:
+  - [x] Open file into buffer with encoding/newline handling.
+  - [x] Save buffer to disk with atomic write strategy.
+  - [x] Track dirty state transitions and reset on save/reload.
+- [x] Wire status line:
+  - [x] Show file name.
+  - [x] Show row/column cursor position.
+  - [x] Show dirty marker.
+- [x] Exit criteria validation:
+  - [x] Verify open/edit/undo/redo/save for files >= 5 MB.
+  - [x] Benchmark keypress-to-render latency during sustained typing.
 
 ## M2 — Workspace UX
 - [ ] Implement file tree UI:

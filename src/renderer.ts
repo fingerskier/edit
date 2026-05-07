@@ -17,6 +17,7 @@ export type RenderOptions = {
   cursorLine?: number;
   cursorColumn?: number;
   editorScrollLine?: number;
+  dirty?: boolean;
   treeEntries?: TreeEntry[];
   highlightedTreeIndex?: number;
   quickOpenQuery?: string;
@@ -38,6 +39,7 @@ export function renderShellFrame(options: RenderOptions | string[] = {}): string
   const cursorLine = normalizePosition(normalized.cursorLine);
   const cursorColumn = normalizePosition(normalized.cursorColumn);
   const editorScrollLine = normalizePosition(normalized.editorScrollLine);
+  const dirtyState = normalized.dirty ? "dirty" : "clean";
   const size = normalizeTerminalSize(normalized.terminalSize);
   const { treeWidth, editorWidth } = layoutWidths(size.columns);
   const contentRows = size.rows - 5;
@@ -60,7 +62,7 @@ export function renderShellFrame(options: RenderOptions | string[] = {}): string
   );
   const overlayLine = borderedLine(renderOverlayText(overlayMode, normalized.quickOpenQuery ?? "", normalized.quickOpenResults ?? []), size.columns);
   const statusFile = currentFile ? path.basename(currentFile) : "<none>";
-  const statusLine = borderedLine(`Status: NORMAL | File: ${statusFile} | Ln ${cursorLine + 1}, Col ${cursorColumn + 1} | clean`, size.columns);
+  const statusLine = borderedLine(`Status: NORMAL | File: ${statusFile} | Ln ${cursorLine + 1}, Col ${cursorColumn + 1} | ${dirtyState}`, size.columns);
 
   const lines = [topBorder(treeWidth, editorWidth)];
   for (let index = 0; index < contentRows; index += 1) {

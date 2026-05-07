@@ -1,6 +1,6 @@
-import fs from "node:fs";
 import process from "node:process";
 import { createDefaultCommandRegistry, type CommandRegistry } from "./commands.js";
+import { EditableDocument } from "./document.js";
 import { Keymap } from "./keymap.js";
 import { renderShellFrame } from "./renderer.js";
 import { WorkspaceTree, type SearchResult } from "./workspace.js";
@@ -20,6 +20,7 @@ export type AppState = {
   cursorLine: number;
   cursorColumn: number;
   editorScrollLine: number;
+  isDirty: boolean;
 };
 
 export class EditorApp {
@@ -27,6 +28,7 @@ export class EditorApp {
   readonly commands: CommandRegistry;
   readonly keymap: Keymap;
   readonly tree: WorkspaceTree;
+  private document?: EditableDocument;
   private input?: NodeJS.ReadStream;
   private output?: NodeJS.WriteStream;
   private renderTimer?: NodeJS.Timeout;
@@ -45,7 +47,8 @@ export class EditorApp {
       currentFileContent: "",
       cursorLine: 0,
       cursorColumn: 0,
-      editorScrollLine: 0
+      editorScrollLine: 0,
+      isDirty: false
     };
 
     this.commands = createDefaultCommandRegistry(() => this.shutdown());
@@ -71,6 +74,9 @@ export class EditorApp {
     this.commands.register("editor.navigate.down", () => this.navigateEditor(1, 0));
     this.commands.register("editor.navigate.left", () => this.navigateEditor(0, -1));
     this.commands.register("editor.navigate.right", () => this.navigateEditor(0, 1));
+    this.commands.register("editor.save", () => this.saveCurrentFile());
+    this.commands.register("editor.undo", () => this.undoEditor());
+    this.commands.register("editor.redo", () => this.redoEditor());
     this.commands.register("tree.navigate.up", () => {
       this.state.focusedRegion = "tree";
       this.tree.moveHighlight(-1);
@@ -147,6 +153,10 @@ export class EditorApp {
       return true;
     }
 
+    if (this.handleEditorTextInput(data)) {
+      return true;
+    }
+
     const command = this.keymap.commandForInput(data);
     return command ? this.commands.execute(command) : false;
   }
@@ -161,6 +171,7 @@ export class EditorApp {
       cursorLine: this.state.cursorLine,
       cursorColumn: this.state.cursorColumn,
       editorScrollLine: this.state.editorScrollLine,
+      dirty: this.state.isDirty,
       treeEntries: this.tree.visibleEntries(),
       highlightedTreeIndex: this.tree.highlightedIndex,
       quickOpenQuery: this.state.quickOpenQuery,
@@ -215,6 +226,7 @@ export class EditorApp {
         const selected = this.state.quickOpenResults[0];
         if (selected) {
           this.openFile(selected.path);
+          this.state.focusedRegion = "editor";
         }
         this.state.overlayMode = "none";
         this.render();
@@ -239,55 +251,154 @@ export class EditorApp {
     return false;
   }
 
+  private handleEditorTextInput(data: string): boolean {
+    if (!this.document || this.state.focusedRegion !== "editor") {
+      return false;
+    }
+
+    if (data.length === 1 && data >= " " && data <= "~") {
+      this.insertAtCursor(data, true);
+      return true;
+    }
+
+    if (data === "\r" || data === "\n") {
+      this.insertAtCursor(this.document.newline, false);
+      return true;
+    }
+
+    if (data === "\u007f") {
+      this.backspaceAtCursor();
+      return true;
+    }
+
+    return false;
+  }
+
   private openFile(file: string): void {
     this.state.currentFile = file;
     try {
-      this.state.currentFileContent = fs.readFileSync(file, "utf8");
+      this.document = EditableDocument.open(file);
     } catch (error) {
-      this.state.currentFileContent = `Unable to read file: ${error instanceof Error ? error.message : String(error)}`;
+      this.document = new EditableDocument(`Unable to read file: ${error instanceof Error ? error.message : String(error)}`);
     }
     this.state.cursorLine = 0;
     this.state.cursorColumn = 0;
     this.state.editorScrollLine = 0;
+    this.syncDocumentState();
   }
 
-  private navigateEditor(lineDelta: number, columnDelta: number): void {
-    if (!this.state.currentFile) {
+  private insertAtCursor(text: string, coalesce: boolean): void {
+    if (!this.document) {
       return;
     }
 
-    const lines = splitFileContent(this.state.currentFileContent);
-    const maxLine = Math.max(0, lines.length - 1);
+    const offset = this.currentCursorOffset();
+    this.document.insertText(offset, text, { coalesce });
+    this.setCursorFromOffset(offset + text.length);
+    this.syncDocumentState();
+    this.render();
+  }
+
+  private backspaceAtCursor(): void {
+    if (!this.document) {
+      return;
+    }
+
+    const offset = this.currentCursorOffset();
+    if (offset === 0) {
+      return;
+    }
+
+    const previousNewline = offset >= 2 ? this.document.buffer.slice(offset - 2, 2) : "";
+    const deleteLength = previousNewline === "\r\n" ? 2 : 1;
+    const deleteOffset = offset - deleteLength;
+    this.document.deleteText(deleteOffset, deleteLength);
+    this.setCursorFromOffset(deleteOffset);
+    this.syncDocumentState();
+    this.render();
+  }
+
+  private navigateEditor(lineDelta: number, columnDelta: number): void {
+    if (!this.document) {
+      return;
+    }
+
+    const maxLine = Math.max(0, this.document.buffer.lineCount() - 1);
     let line = clamp(this.state.cursorLine, 0, maxLine);
-    let column = clamp(this.state.cursorColumn, 0, lineLength(lines[line] ?? ""));
+    let column = clamp(this.state.cursorColumn, 0, lineLength(this.document.buffer.lineText(line)));
 
     if (lineDelta !== 0) {
       line = clamp(line + lineDelta, 0, maxLine);
-      column = Math.min(column, lineLength(lines[line] ?? ""));
+      column = Math.min(column, lineLength(this.document.buffer.lineText(line)));
     }
 
     if (columnDelta < 0) {
-      if (column > 0) {
-        column -= 1;
-      } else if (line > 0) {
-        line -= 1;
-        column = lineLength(lines[line] ?? "");
-      }
+      const offset = this.document.buffer.positionToOffset(line, column);
+      this.setCursorFromOffset(Math.max(0, offset - 1));
     } else if (columnDelta > 0) {
-      const currentLineLength = lineLength(lines[line] ?? "");
-      if (column < currentLineLength) {
-        column += 1;
-      } else if (line < maxLine) {
-        line += 1;
-        column = 0;
-      }
+      const offset = this.document.buffer.positionToOffset(line, column);
+      this.setCursorFromOffset(Math.min(this.document.buffer.length, offset + 1));
+    } else {
+      this.state.cursorLine = line;
+      this.state.cursorColumn = column;
+      this.ensureEditorCursorVisible(this.document.buffer.lineCount());
     }
 
-    this.state.cursorLine = line;
-    this.state.cursorColumn = column;
     this.state.focusedRegion = "editor";
-    this.ensureEditorCursorVisible(lines.length);
     this.render();
+  }
+
+  private saveCurrentFile(): void {
+    if (!this.document || !this.state.currentFile) {
+      return;
+    }
+
+    this.document.save(this.state.currentFile);
+    this.syncDocumentState();
+    this.render();
+  }
+
+  private undoEditor(): void {
+    if (!this.document || !this.document.undo()) {
+      return;
+    }
+
+    this.setCursorFromOffset(Math.min(this.currentCursorOffset(), this.document.buffer.length));
+    this.syncDocumentState();
+    this.render();
+  }
+
+  private redoEditor(): void {
+    if (!this.document || !this.document.redo()) {
+      return;
+    }
+
+    this.setCursorFromOffset(Math.min(this.currentCursorOffset(), this.document.buffer.length));
+    this.syncDocumentState();
+    this.render();
+  }
+
+  private syncDocumentState(): void {
+    this.state.currentFileContent = this.document?.text ?? "";
+    this.state.isDirty = this.document?.dirty ?? false;
+    this.ensureEditorCursorVisible(this.document?.buffer.lineCount() ?? 1);
+  }
+
+  private currentCursorOffset(): number {
+    if (!this.document) {
+      return 0;
+    }
+    return this.document.buffer.positionToOffset(this.state.cursorLine, this.state.cursorColumn);
+  }
+
+  private setCursorFromOffset(offset: number): void {
+    if (!this.document) {
+      return;
+    }
+    const position = this.document.buffer.offsetToPosition(clamp(offset, 0, this.document.buffer.length));
+    this.state.cursorLine = position.line;
+    this.state.cursorColumn = position.column;
+    this.ensureEditorCursorVisible(this.document.buffer.lineCount());
   }
 
   private ensureEditorCursorVisible(totalLines: number): void {
@@ -318,10 +429,6 @@ export class EditorApp {
   private readonly onInput = (chunk: Buffer | string): void => {
     this.handleInput(String(chunk));
   };
-}
-
-function splitFileContent(content: string): string[] {
-  return content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
 }
 
 function lineLength(line: string): number {
