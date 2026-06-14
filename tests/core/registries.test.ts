@@ -37,3 +37,31 @@ test('getting an unknown service throws', () => {
   const services = new ServiceRegistry();
   assert.throws(() => services.get('nope'), /unknown service: nope/);
 });
+
+import { CommandRegistry as CR2 } from '../../src/core/registries.ts';
+
+test('register accepts optional metadata and list() returns id + title', () => {
+  const reg = new CR2();
+  reg.register('editor.save', () => {}, { title: 'Save File' });
+  reg.register('editor.quit', () => {}); // no meta
+  const list = reg.list().sort((a, b) => a.id.localeCompare(b.id));
+  assert.deepEqual(list, [
+    { id: 'editor.quit' },
+    { id: 'editor.save', title: 'Save File' },
+  ]);
+});
+
+test('register returns an identity-guarded disposer', async () => {
+  const reg = new CR2();
+  const sub = reg.register('a', () => 1);
+  reg.register('a', () => 2); // overwrites
+  sub.dispose(); // must NOT remove the newer handler
+  assert.equal(await reg.run('a', undefined), 2);
+});
+
+test('run reads the stored handler and still throws on unknown id', async () => {
+  const reg = new CR2();
+  reg.register('x', (n: number) => n + 1);
+  assert.equal(await reg.run('x', 41), 42);
+  await assert.rejects(() => reg.run('nope', undefined), /unknown command: nope/);
+});

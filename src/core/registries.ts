@@ -1,18 +1,41 @@
+import type { Disposable } from './disposable.js';
+
 export type CommandHandler = (args: any) => any | Promise<any>;
 
-export class CommandRegistry {
-  private handlers = new Map<string, CommandHandler>();
+export interface CommandMeta {
+  title?: string;
+}
 
-  register(id: string, handler: CommandHandler): void {
-    this.handlers.set(id, handler);
+interface CommandEntry {
+  handler: CommandHandler;
+  meta: CommandMeta;
+}
+
+export class CommandRegistry {
+  private commands = new Map<string, CommandEntry>();
+
+  register(id: string, handler: CommandHandler, meta: CommandMeta = {}): Disposable {
+    const entry: CommandEntry = { handler, meta };
+    this.commands.set(id, entry);
+    return {
+      dispose: () => {
+        if (this.commands.get(id) === entry) this.commands.delete(id);
+      },
+    };
   }
 
-  ids(): string[] { return [...this.handlers.keys()]; }
+  ids(): string[] {
+    return [...this.commands.keys()];
+  }
+
+  list(): Array<{ id: string } & CommandMeta> {
+    return [...this.commands.entries()].map(([id, entry]) => ({ id, ...entry.meta }));
+  }
 
   async run(id: string, args?: any): Promise<any> {
-    const handler = this.handlers.get(id);
-    if (!handler) throw new Error(`unknown command: ${id}`);
-    return await handler(args);
+    const entry = this.commands.get(id);
+    if (!entry) throw new Error(`unknown command: ${id}`);
+    return await entry.handler(args);
   }
 }
 
