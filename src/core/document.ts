@@ -1,4 +1,4 @@
-import { StringBuffer, type TextBuffer, type EditOp } from './buffer.ts';
+import { StringBuffer, type TextBuffer, type EditOp } from './buffer.js';
 
 export interface Selection { anchor: number; head: number }
 

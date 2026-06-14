@@ -1,5 +1,5 @@
 import { watch, type FSWatcher } from 'node:fs';
-import type { EventBus } from './event-bus.ts';
+import type { EventBus } from './event-bus.js';
 
 export class Watcher {
   private watchers = new Map<string, FSWatcher>();

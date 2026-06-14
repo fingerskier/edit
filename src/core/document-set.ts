@@ -1,4 +1,4 @@
-import { Document } from './document.ts';
+import { Document } from './document.js';
 
 export class DocumentSet {
   private docs = new Map<string, Document>();
