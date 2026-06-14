@@ -101,6 +101,38 @@ Plugins emit these as **plain data** — never raw drawing calls:
 - `StatusLine` — ordered segments.
 - `Overlay` — a floating panel containing a `List` or `TextRegion`.
 
+### Communication model: functions vs events
+
+The system is a **hybrid**, not pure pub/sub. A pure event design makes control flow untraceable,
+leaves inter-listener ordering ambiguous, and prevents return values and error propagation. The
+seam is explicit:
+
+**Imperative functions — "tell": directed, return values, errors propagate to the caller.**
+- Buffer/document mutation: `buffer.applyOp(op)`, `doc.save()`.
+- Workspace queries/actions: `workspace.openDocument(path)`, `workspace.activeDocument`.
+- Command dispatch: `commands.run(id, args)` runs exactly *one* registered handler and may return a
+  result.
+- File I/O: `fs.read(path)`, `fs.write(...)`.
+- Registration (all contribution registries): `commands.register()`, `keys.bind()`,
+  `view.contribute()`, `services.register()` / `services.get()`.
+
+**Events — "announce": broadcast, past-tense facts, fire-and-forget, no return value, no
+inter-listener ordering guarantees.**
+- `document:changed`, `document:activated`, `document:saved`.
+- `selection:moved`.
+- `fs:changed` (from the watcher).
+- `plugin:activated` / lifecycle events.
+
+A typical flow mixes both: the keymap calls `commands.run('editor.insertChar')` (function,
+directed) → the command calls `buffer.applyOp()` (function) → the buffer *emits* `document:changed`
+(event) → view plugins react and call `view.invalidate()` (function). The event layer exists for
+the unknown-many reactors; anything with a definite caller-callee relationship stays a function.
+
+**Sync/async rules:**
+- `commands.run()` is **async** (returns a `Promise`) so commands may perform file I/O.
+- The **event bus is synchronous** — `emit` blocks until all listeners have run — so state-change
+  ordering is predictable.
+
 ## 5. Default Plugins (shipped enabled)
 
 All authored against the public plugin API — dogfooding that proves the contract:
