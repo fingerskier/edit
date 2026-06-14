@@ -190,3 +190,24 @@ test('subscriptions are drained on dispose (commands unregistered)', async () =>
   assert.ok(!app.commands.list().some((c) => c.id === 'history.undo'));
   assert.ok(!app.commands.list().some((c) => c.id === 'history.redo'));
 });
+
+test('undo after backspace restores both text AND the pre-backspace caret position', async () => {
+  const { app } = await makeApp();
+  const doc = app.workspace.openScratch('abc');
+
+  // Place caret at offset 3 (after 'c')
+  app.workspace.setSelection({ anchor: 3, head: 3 });
+  assert.equal(doc.selection.head, 3);
+
+  // backspace removes 'c': text becomes 'ab', caret lands at 2
+  app.workspace.applyEdit({ start: 2, end: 3, text: '' });
+  assert.equal(doc.text(), 'ab');
+  assert.equal(doc.selection.head, 2);
+
+  // undo: text should go back to 'abc' AND caret should go back to 3
+  await app.commands.run('history.undo');
+  assert.equal(doc.text(), 'abc', 'text restored after undo');
+  assert.deepEqual(doc.selection, { anchor: 3, head: 3 }, 'caret restored to pre-backspace position');
+
+  await app.dispose();
+});

@@ -305,6 +305,33 @@ test('alt+right (and editor.focus) set the base focus context to editor', async 
 
 // --- commands no-op without an active document ---
 
+test('external caret move (setSelection) resets the goal column', async () => {
+  // Set up a multi-line doc: line 0 = "abcd" (4 chars), line 1 = "xy" (2 chars), line 2 = "efgh" (4 chars)
+  // Text: "abcd\nxy\nefgh"  offsets: line0=[0..4], \n=4, line1=[5..7], \n=7, line2=[8..12]
+  const { adapter, app } = await setup('abcd\nxy\nefgh');
+
+  // Place caret at line 0, col 3 (offset 3)
+  app.workspace.setSelection({ anchor: 3, head: 3 });
+
+  // Press 'down' — goalCol is captured as 3; line 1 "xy" is length 2, so caret clamps to offset 7 (col 2)
+  adapter.sendKey('down');
+  assert.equal(main(adapter).cursors[0], 7, 'after first down, caret at end of "xy"');
+
+  // NOW externally move the caret to line 2, col 0 (offset 8) — bypassing editor-view's own handler
+  // This simulates what undo/redo does via workspace.setSelection
+  app.workspace.setSelection({ anchor: 8, head: 8 });
+
+  // Press 'down' again — goalCol should have been reset to null by the external move.
+  // The new goal column should be captured from the current position: col 0.
+  // Line 2 is "efgh" — but this is the LAST line, so down on last line stays at current line.
+  // Let's move up instead: from line 2 col 0 (offset 8), up to line 1 col 0 (offset 5).
+  adapter.sendKey('up');
+  // With stale goalCol=3, it would land at line 1 col 2 = offset 7 (clamped from col 3 in "xy").
+  // With reset goalCol=null, it captures col 0 from offset 8, then moves to line 1 col 0 = offset 5.
+  assert.equal(main(adapter).cursors[0], 5, 'goal col reset after external setSelection; up uses col 0');
+  void app;
+});
+
 test('editor commands no-op (do not throw) when there is no active document', async () => {
   const { adapter, app } = await setup('', { open: false });
   // none of these should throw, and the rendered frame stays the empty default

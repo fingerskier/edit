@@ -48,9 +48,12 @@ const editorView: Plugin = {
 
     // The sticky goal column for vertical movement. Only moveUp/moveDown read or
     // write it; every other caret-moving command (and document:activated) resets
-    // it to null. We do NOT reset it on 'selection:moved' (that fires during our
-    // own vertical moves and would erase the goal we just set).
+    // it to null. We reset it on 'selection:moved' UNLESS it was caused by our
+    // own vertical move (inVerticalMove flag), so that external caret moves
+    // (e.g. undo/redo via workspace.setSelection) clear a stale goalCol.
     let goalCol: number | null = null;
+    // True ONLY while this plugin's own verticalMove handler is executing.
+    let inVerticalMove = false;
 
     // --- view provider for slot 'main' ---
     const viewDisposable: Disposable = view.contribute('main', (): ViewModel => {
@@ -118,7 +121,12 @@ const editorView: Plugin = {
       if (goalCol === null) goalCol = col;
       const lineCount = lineStarts(text).length;
       const target = Math.max(0, Math.min(lineCount - 1, line + dir));
-      moveTo(lineColToOffset(text, target, goalCol));
+      inVerticalMove = true;
+      try {
+        moveTo(lineColToOffset(text, target, goalCol));
+      } finally {
+        inVerticalMove = false;
+      }
     };
 
     const moveUp = (): void => verticalMove(-1);
@@ -179,7 +187,7 @@ const editorView: Plugin = {
     subscriptions.push(
       viewDisposable,
       events.on('document:changed', () => view.invalidate()),
-      events.on('selection:moved', () => view.invalidate()),
+      events.on('selection:moved', () => { if (!inVerticalMove) goalCol = null; view.invalidate(); }),
       events.on('document:activated', () => {
         goalCol = null;
         view.invalidate();

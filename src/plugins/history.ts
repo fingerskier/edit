@@ -47,9 +47,10 @@ const history: Plugin = {
         // tracks exactly the document named by the event.
         const doc = ctx.workspace.getDocument(docId);
         const selAfter: Selection = doc ? clone(doc.selection) : collapsed(inverse.end);
-        // selBefore (approx): collapsed caret at the edit start (inverse.start).
-        // Exact for single-caret insert/delete performed at the caret.
-        const selBefore: Selection = collapsed(inverse.start);
+        // selBefore: use the snapshotted pre-edit selection threaded through the event
+        // payload when available (exact); fall back to collapsed(inverse.start) for
+        // callers that do not supply it.
+        const selBefore: Selection = payload.selBefore ? { ...payload.selBefore } : collapsed(inverse.start);
 
         const s = stacksFor(docId);
         s.undo.push({ op, inverse, selBefore, selAfter });

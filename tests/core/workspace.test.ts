@@ -127,3 +127,32 @@ test('closeDocument on an unknown id is a no-op and emits nothing', () => {
   ws.closeDocument('nope');
   assert.equal(events, 0);
 });
+
+test('openFile deduplicates: reopening the same path returns the existing document', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'edit-ws-'));
+  try {
+    await writeFile(join(dir, 'dup.txt'), 'content');
+    const { bus, ws } = makeWorkspace([dir]);
+    const path = join(dir, 'dup.txt');
+
+    const openedEvents: string[] = [];
+    const activatedEvents: string[] = [];
+    bus.on('document:opened', () => openedEvents.push('opened'));
+    bus.on('document:activated', () => activatedEvents.push('activated'));
+
+    const first = await ws.openFile(path);
+    assert.deepEqual(openedEvents, ['opened'], 'first open emits document:opened');
+    assert.deepEqual(activatedEvents, ['activated'], 'first open emits document:activated');
+
+    // Mutate to confirm re-open does not discard edits
+    first.buffer.apply({ start: 0, end: 0, text: 'EDIT:' });
+
+    const second = await ws.openFile(path);
+    assert.equal(second.id, first.id, 'same document id returned on second open');
+    assert.deepEqual(openedEvents, ['opened'], 'second open does NOT emit another document:opened');
+    assert.deepEqual(activatedEvents, ['activated', 'activated'], 'second open emits document:activated');
+    assert.equal(second.text(), 'EDIT:content', 'unsaved edits are preserved on re-open');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

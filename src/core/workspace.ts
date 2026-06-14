@@ -17,6 +17,12 @@ export class Workspace {
   getDocument(id: string): Document | undefined { return this.docs.get(id); }
 
   async openFile(path: string): Promise<Document> {
+    const existing = this.list().find((d) => d.path === path);
+    if (existing) {
+      this.docs.setActive(existing.id);
+      this.bus.emit('document:activated', { docId: existing.id });
+      return existing;
+    }
     const content = await this.fs.read(path);
     const doc = this.docs.add(path, content);
     this.bus.emit('document:opened', { docId: doc.id, path });
@@ -49,8 +55,9 @@ export class Workspace {
 
   applyEdit(op: EditOp): EditOp {
     const doc = this.requireActive();
+    const selBefore = { ...doc.selection };
     const inverse = doc.apply(op);
-    this.bus.emit('document:changed', { docId: doc.id, op, inverse });
+    this.bus.emit('document:changed', { docId: doc.id, op, inverse, selBefore });
     return inverse;
   }
 
