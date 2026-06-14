@@ -1,9 +1,47 @@
-# Phase 3 — TUI Adapter + CLI (Roadmap, for later)
+# Phase 3 — TUI Adapter + CLI (Roadmap)
 
-> **Status:** RECORDED FOR LATER — not yet executed. This is a design roadmap, not a finished
-> bite-sized TDD plan. When Phase 3 is picked up: (1) do a short design pass on the **Open Decisions**
-> below, then (2) run `superpowers:writing-plans` to expand the **Task Outline** into a full
-> task-by-task TDD plan, then (3) execute with `superpowers:subagent-driven-development`.
+> **Status:** ✅ EXECUTED (2026-06-14). Milestone 1 is complete: `edit [paths…]` launches a real
+> terminal editor (tree + editor + status line + palette overlay), driven by the existing headless
+> core + default plugins behind the frozen `Adapter` interface. The original roadmap (open decisions,
+> task outline, testing strategy) is preserved below for context; the **Resolution** section records
+> what actually shipped.
+
+## Resolution — what shipped (2026-06-14)
+
+**New files (all behind the frozen `Adapter` interface — zero core changes):**
+- `src/adapters/tui/key-decoder.ts` — pure, stateless raw-input → key-token decoder (§C contract).
+- `src/adapters/tui/layout.ts` — pure slot geometry from `{cols, rows}`.
+- `src/adapters/tui/renderer.ts` — pure `Frame` → screen-grid painter (+ `screenToText`/`screenToAnsi`).
+- `src/adapters/tui/terminal.ts` — thin TTY side effects (raw mode, alt screen, resize), injectable streams.
+- `src/adapters/tui/tui-adapter.ts` — `TuiAdapter implements Adapter`: glue + lifecycle.
+- `src/cli.ts` — `edit` entrypoint: arg parsing, root/config resolution, app wiring, quit + signals.
+- `src/plugins/status-bar.ts` — **additive** plugin populating the reserved `status` slot (file name,
+  1-based Ln/Col, dirty marker). Completes the M1 "status line wiring" deliverable; uses only the
+  stable `view.contribute('status', …)` API (no abstraction leak). Added to `defaultPlugins()`.
+
+**Open Decisions — resolved:**
+1. Key decoding → **hand-rolled, zero runtime deps** (pure `key-decoder.ts`).
+2. Render strategy → **full repaint** each frame (absolute row positioning + reverse-video runs).
+3. Tree → **fixed-width left column** (`clamp(round(cols*0.25), 16, 40)`) + 1-col divider. Node-level
+   collapse remains a directory-list concern; no plugin tweak was needed.
+4. Styling → **minimal**: reverse-video for the selected list row, the status bar, and a bordered
+   overlay box; `StyleSpan`/`style` left for the future themes plugin.
+5. Quit → **CLI-wired** `app.quit` + `global:ctrl+q`; `app.dispose()` restores the TTY. Unsaved-changes
+   prompt deferred (M1 quits directly).
+6. Cross-platform input → **modern terminals** (setRawMode + ANSI; meta folded into `alt+`).
+
+**Space-bar tokenization (contract ambiguity resolved):** the space key decodes to the literal `' '`
+(not `'space'`), because `isPrintable(' ') === true` and the editor/palette insert/filter via the
+`<printable>` path. `'space'` remains a valid keyspec name for explicit bindings.
+
+**Also fixed:** the `npm test` script glob was unquoted (`tests/**/*.test.ts`), which the shell expands
+non-recursively — it silently skipped nested suites. Quoted it so Node's runner globs recursively.
+
+**Verification:** `npm run build` clean; `npm test` → 230 passing (incl. TUI unit + CLI + a TUI e2e
+mirroring the Phase 2 integration test). Manual smoke: `node dist/cli.js <dir>` and `<file>` render the
+tree/editor/status, and `ctrl+q` restores the terminal and exits 0.
+
+---
 
 **Goal:** Make `edit` a runnable terminal app — `npx edit [paths…]` opens the single-pane editor in
 the terminal, driven by the existing headless core + default plugins. This is the final piece of

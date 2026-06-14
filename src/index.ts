@@ -17,6 +17,13 @@ export {
 } from './core/view.js';
 export { type Adapter, type KeyHandler } from './core/adapter.js';
 export { HeadlessAdapter } from './adapters/headless.js';
+export { TuiAdapter } from './adapters/tui/tui-adapter.js';
+export { Terminal, type TerminalLike } from './adapters/tui/terminal.js';
+export { decodeKeys } from './adapters/tui/key-decoder.js';
+export { computeLayout, type Layout, type Rect } from './adapters/tui/layout.js';
+export {
+  renderFrame, screenToText, screenToAnsi, type Screen, type Cell,
+} from './adapters/tui/renderer.js';
 export { PluginHost, type Plugin, type PluginContext } from './core/plugin-host.js';
 export { resolvePlugins, type ResolveOptions } from './core/plugin-loader.js';
 export { defaultPlugins } from './plugins/index.js';
