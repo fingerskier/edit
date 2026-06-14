@@ -56,9 +56,11 @@ export async function createApp(options: AppOptions): Promise<App> {
 
   const host = new PluginHost(ctxFor);
 
+  // The core does not dispatch keys itself. It forwards raw keys onto the bus as a
+  // past-tense 'key' fact; the keymap plugin owns resolution, focus/mode routing,
+  // passing the key to the command, and command-error handling.
   adapter.onKey((key) => {
-    const commandId = keys.resolve(key);
-    if (commandId) void commands.run(commandId);
+    bus.emit('key', { key });
   });
 
   await host.activateAll(plugins);

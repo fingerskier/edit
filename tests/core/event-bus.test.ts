@@ -28,3 +28,19 @@ test('off removes a listener', () => {
   bus.emit('e', undefined);
   assert.equal(count, 0);
 });
+
+test('a throwing listener does not abort the remaining listeners or emit', () => {
+  const bus = new EventBus();
+  const seen: number[] = [];
+  const originalError = console.error;
+  console.error = () => {}; // silence the isolation log for clean test output
+  try {
+    bus.on('e', () => { seen.push(1); });
+    bus.on('e', () => { throw new Error('boom'); });
+    bus.on('e', () => { seen.push(3); });
+    assert.doesNotThrow(() => bus.emit('e', undefined));
+    assert.deepEqual(seen, [1, 3]);
+  } finally {
+    console.error = originalError;
+  }
+});

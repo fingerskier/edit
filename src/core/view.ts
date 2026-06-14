@@ -29,7 +29,14 @@ export class ViewComposer {
   compose(): Frame {
     const frame: Frame = {};
     for (const [slot, provider] of this.registry.entries()) {
-      const vm = provider();
+      let vm: ViewModel | null;
+      try {
+        vm = provider();
+      } catch (err) {
+        // A misbehaving provider degrades only its own slot, not the whole frame.
+        console.error(`[ViewComposer] provider for slot "${slot}" threw:`, err);
+        continue;
+      }
       if (vm !== null) frame[slot] = vm;
     }
     return frame;

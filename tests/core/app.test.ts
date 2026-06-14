@@ -16,22 +16,42 @@ test('activating a plugin lets it contribute a view that renders on start', asyn
   assert.deepEqual(adapter.lastFrame()?.status, { kind: 'status', segments: ['ready'] });
 });
 
-test('a key bound to a command runs that command via the adapter', async () => {
+test('adapter keys are forwarded to the bus as "key" events for plugins to route', async () => {
   const adapter = new HeadlessAdapter();
-  let ran = 0;
+  const seen: string[] = [];
   const plugin: Plugin = {
-    name: 'kb',
+    name: 'observer',
     activate(ctx) {
-      ctx.commands.register('demo.ping', () => { ran++; });
-      ctx.keys.bind('ctrl+p', 'demo.ping');
+      ctx.events.on('key', (p: { key: string }) => seen.push(p.key));
     },
   };
   await createApp({ adapter, plugins: [plugin], roots: [] });
   adapter.sendKey('ctrl+p');
-  assert.equal(ran, 1);
+  adapter.sendKey('a');
+  assert.deepEqual(seen, ['ctrl+p', 'a']);
 });
 
-test('an unbound key is ignored without throwing', async () => {
+test('a plugin can implement keymap dispatch on top of raw key events', async () => {
+  const adapter = new HeadlessAdapter();
+  const runs: Array<{ key: string }> = [];
+  const plugin: Plugin = {
+    name: 'keymap-like',
+    activate(ctx) {
+      ctx.commands.register('demo.ping', (args: { key: string }) => { runs.push(args); });
+      ctx.keys.bind('ctrl+p', 'demo.ping');
+      ctx.events.on('key', (p: { key: string }) => {
+        const id = ctx.keys.resolve(p.key);
+        if (id) void ctx.commands.run(id, { key: p.key });
+      });
+    },
+  };
+  await createApp({ adapter, plugins: [plugin], roots: [] });
+  adapter.sendKey('ctrl+p');
+  adapter.sendKey('ctrl+q'); // unbound -> no dispatch
+  assert.deepEqual(runs, [{ key: 'ctrl+p' }]);
+});
+
+test('sending a key with no listeners does not throw', async () => {
   const adapter = new HeadlessAdapter();
   await createApp({ adapter, plugins: [], roots: [] });
   assert.doesNotThrow(() => adapter.sendKey('ctrl+q'));

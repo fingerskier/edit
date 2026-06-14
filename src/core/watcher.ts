@@ -7,7 +7,13 @@ export class Watcher {
 
   watch(dir: string): void {
     if (this.watchers.has(dir)) return;
-    const w = watch(dir, () => this.bus.emit('fs:changed', { dir }));
+    const w = watch(dir, (eventType, filename) => {
+      this.bus.emit('fs:changed', {
+        dir,
+        filename: filename === null ? null : filename.toString(),
+        eventType,
+      });
+    });
     this.watchers.set(dir, w);
   }
 

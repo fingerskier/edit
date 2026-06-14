@@ -19,8 +19,13 @@ export class StringBuffer implements TextBuffer {
   length(): number { return this.text.length; }
 
   apply(op: EditOp): EditOp {
-    const removed = this.text.slice(op.start, op.end);
-    this.text = this.text.slice(0, op.start) + op.text + this.text.slice(op.end);
-    return { start: op.start, end: op.start + op.text.length, text: removed };
+    // Normalize the op into valid, ordered bounds so the returned inverse always
+    // round-trips: clamp into [0, length] and enforce start <= end.
+    const len = this.text.length;
+    const start = Math.max(0, Math.min(len, op.start));
+    const end = Math.max(start, Math.min(len, op.end));
+    const removed = this.text.slice(start, end);
+    this.text = this.text.slice(0, start) + op.text + this.text.slice(end);
+    return { start, end: start + op.text.length, text: removed };
   }
 }

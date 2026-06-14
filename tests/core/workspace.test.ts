@@ -80,3 +80,50 @@ test('save writes the active doc to disk, clears dirty, emits document:saved', a
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('setActive on an unknown id is a no-op and emits nothing', () => {
+  const { bus, ws } = makeWorkspace();
+  ws.openScratch('a');
+  let activations = 0;
+  bus.on('document:activated', () => { activations++; });
+  ws.setActive('does-not-exist');
+  assert.equal(activations, 0);
+});
+
+test('setActive on a known id switches active and emits document:activated', () => {
+  const { bus, ws } = makeWorkspace();
+  const first = ws.openScratch('first');
+  const second = ws.openScratch('second');
+  let activatedId: string | undefined;
+  bus.on('document:activated', (p: { docId: string }) => { activatedId = p.docId; });
+  ws.setActive(first.id);
+  assert.equal(ws.activeDocument?.id, first.id);
+  assert.equal(activatedId, first.id);
+  assert.notEqual(first.id, second.id);
+});
+
+test('closeDocument removes the doc, emits document:closed, and re-activates the survivor', () => {
+  const { bus, ws } = makeWorkspace();
+  const first = ws.openScratch('first');
+  const second = ws.openScratch('second'); // second is active
+  const events: Array<{ type: string; docId: string }> = [];
+  bus.on('document:closed', (p: { docId: string }) => events.push({ type: 'closed', docId: p.docId }));
+  bus.on('document:activated', (p: { docId: string }) => events.push({ type: 'activated', docId: p.docId }));
+  ws.closeDocument(second.id);
+  assert.equal(ws.getDocument(second.id), undefined);
+  assert.equal(ws.activeDocument?.id, first.id);
+  assert.deepEqual(events, [
+    { type: 'closed', docId: second.id },
+    { type: 'activated', docId: first.id },
+  ]);
+});
+
+test('closeDocument on an unknown id is a no-op and emits nothing', () => {
+  const { bus, ws } = makeWorkspace();
+  ws.openScratch('a');
+  let events = 0;
+  bus.on('document:closed', () => { events++; });
+  bus.on('document:activated', () => { events++; });
+  ws.closeDocument('nope');
+  assert.equal(events, 0);
+});

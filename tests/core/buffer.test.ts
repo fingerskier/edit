@@ -24,3 +24,27 @@ test('pure delete inverse re-inserts removed text', () => {
   assert.equal(b.getText(), 'abef');
   assert.deepEqual(inverse, { start: 2, end: 2, text: 'cd' });
 });
+
+test('a reversed op (end < start) is normalized to an insert and round-trips', () => {
+  const b = new StringBuffer('hello world');
+  const inverse = b.apply({ start: 5, end: 2, text: 'X' });
+  assert.equal(b.getText(), 'helloX world'); // inserted at 5; empty range
+  assert.deepEqual(inverse, { start: 5, end: 6, text: '' });
+  b.apply(inverse);
+  assert.equal(b.getText(), 'hello world');
+});
+
+test('out-of-range bounds are clamped and the inverse still round-trips', () => {
+  const b = new StringBuffer('abc');
+  const negInverse = b.apply({ start: -2, end: 1, text: 'Q' }); // start clamps to 0
+  assert.equal(b.getText(), 'Qbc');
+  assert.deepEqual(negInverse, { start: 0, end: 1, text: 'a' });
+  b.apply(negInverse);
+  assert.equal(b.getText(), 'abc');
+
+  const overInverse = b.apply({ start: 1, end: 99, text: 'Z' }); // end clamps to length
+  assert.equal(b.getText(), 'aZ');
+  assert.deepEqual(overInverse, { start: 1, end: 2, text: 'bc' });
+  b.apply(overInverse);
+  assert.equal(b.getText(), 'abc');
+});

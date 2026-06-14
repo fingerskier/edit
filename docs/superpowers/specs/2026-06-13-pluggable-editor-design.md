@@ -117,16 +117,27 @@ seam is explicit:
   `view.contribute()`, `services.register()` / `services.get()`.
 
 **Events — "announce": broadcast, past-tense facts, fire-and-forget, no return value, no
-inter-listener ordering guarantees.**
-- `document:changed`, `document:activated`, `document:saved`.
+inter-listener ordering guarantees.** Listeners are isolated — one throwing reactor is logged and
+skipped, never aborting the rest of an emit.
+- `document:opened`, `document:activated`, `document:changed` (payload carries `inverse` for undo),
+  `document:saved`, `document:closed`.
 - `selection:moved`.
-- `fs:changed` (from the watcher).
+- `fs:changed` (from the watcher; payload `{ dir, filename, eventType }`).
+- `key` (raw key forwarded by the adapter — see input model below).
 - `plugin:activated` / lifecycle events.
 
-A typical flow mixes both: the keymap calls `commands.run('editor.insertChar')` (function,
-directed) → the command calls `buffer.applyOp()` (function) → the buffer *emits* `document:changed`
-(event) → view plugins react and call `view.invalidate()` (function). The event layer exists for
-the unknown-many reactors; anything with a definite caller-callee relationship stays a function.
+**Input model:** the core does **not** dispatch keys. The adapter captures a raw key and the core
+forwards it onto the bus as a `key` fact (`{ key }`). The **keymap plugin** owns everything
+downstream: resolving the key against the keybinding registry, honoring focus/mode (so an open
+overlay captures keystrokes instead of the editor), passing the key to the command
+(`commands.run(id, { key })` — this is how typed characters reach `editor.insertChar`), and handling
+command errors. This keeps the core bare-metal and makes modal routing a plugin concern.
+
+A typical flow mixes both: the adapter forwards a key → the bus emits `key` → the keymap plugin
+resolves it and calls `commands.run('editor.insertChar', { key })` (function, directed) → the command
+calls `workspace.applyEdit()` (function) → the workspace *emits* `document:changed` (event) → view
+plugins react and call `view.invalidate()` (function). The event layer exists for the unknown-many
+reactors; anything with a definite caller-callee relationship stays a function.
 
 **Sync/async rules:**
 - `commands.run()` is **async** (returns a `Promise`) so commands may perform file I/O.

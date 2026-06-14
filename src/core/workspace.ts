@@ -34,8 +34,17 @@ export class Workspace {
   }
 
   setActive(id: string): void {
+    if (!this.docs.get(id)) return;
     this.docs.setActive(id);
     this.bus.emit('document:activated', { docId: id });
+  }
+
+  closeDocument(id: string): void {
+    if (!this.docs.get(id)) return;
+    this.docs.close(id);
+    this.bus.emit('document:closed', { docId: id });
+    const active = this.docs.active;
+    if (active) this.bus.emit('document:activated', { docId: active.id });
   }
 
   applyEdit(op: EditOp): EditOp {

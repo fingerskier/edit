@@ -29,3 +29,31 @@ test('markClean resets the dirty flag', () => {
   d.markClean();
   assert.equal(d.dirty, false);
 });
+
+test('an insert before the caret shifts the caret forward', () => {
+  const d = new Document('doc1', null, 'hello');
+  d.setSelection({ anchor: 5, head: 5 });
+  d.apply({ start: 0, end: 0, text: 'XX' }); // -> 'XXhello'
+  assert.deepEqual(d.selection, { anchor: 7, head: 7 });
+});
+
+test('inserting at the caret advances past the inserted text', () => {
+  const d = new Document('doc1', null, 'hello');
+  d.setSelection({ anchor: 2, head: 2 });
+  d.apply({ start: 2, end: 2, text: 'AB' }); // -> 'heABllo'
+  assert.deepEqual(d.selection, { anchor: 4, head: 4 });
+});
+
+test('a delete before the caret pulls the caret back', () => {
+  const d = new Document('doc1', null, 'hello');
+  d.setSelection({ anchor: 4, head: 4 });
+  d.apply({ start: 0, end: 2, text: '' }); // delete 'he' -> 'llo'
+  assert.deepEqual(d.selection, { anchor: 2, head: 2 });
+});
+
+test('a caret inside a deleted range collapses to the edit point', () => {
+  const d = new Document('doc1', null, 'hello');
+  d.setSelection({ anchor: 3, head: 3 });
+  d.apply({ start: 2, end: 4, text: '' }); // delete 'll' -> 'heo'
+  assert.deepEqual(d.selection, { anchor: 2, head: 2 });
+});
