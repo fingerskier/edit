@@ -10,6 +10,24 @@
 
 ---
 
+## IMPORTANT: import-extension convention (correction)
+
+The code blocks below were originally written with `.ts` import extensions. That forces
+`allowImportingTsExtensions` + `noEmit` and stops `tsc` from emitting `dist/` (which `npx`
+distribution needs). Apply this convention instead:
+
+- **Source files under `src/`** import internal modules with **`.js`** extensions (e.g.
+  `import { EventBus } from './event-bus.js'`). `tsc` resolves `./x.js` → `x.ts` and emits `x.js`;
+  `tsx` resolves it too. So when a code block below shows `from './x.ts'` inside a `src/` file,
+  type it as `from './x.js'`.
+- **Test files under `tests/`** keep **`.ts`** extensions (e.g.
+  `from '../../src/core/event-bus.ts'`). Tests only ever run under `tsx`, never `tsc`, and the
+  tsconfig `include` is `src/**/*.ts`, so they are not type-checked.
+- **Do not** add `allowImportingTsExtensions` or `noEmit` to `tsconfig.json`. `npm run build` must
+  emit `dist/`.
+
+Tasks 0–6 already applied this correction.
+
 ## File Structure
 
 ```
