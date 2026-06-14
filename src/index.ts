@@ -19,3 +19,4 @@ export { type Adapter, type KeyHandler } from './core/adapter.js';
 export { HeadlessAdapter } from './adapters/headless.js';
 export { PluginHost, type Plugin, type PluginContext } from './core/plugin-host.js';
 export { resolvePlugins, type ResolveOptions } from './core/plugin-loader.js';
+export { defaultPlugins } from './plugins/index.js';
