@@ -42,20 +42,38 @@ export class CommandRegistry {
 export class KeybindingRegistry {
   private bindings = new Map<string, string>();
 
-  bind(keySpec: string, commandId: string): void {
+  bind(keySpec: string, commandId: string): Disposable {
     this.bindings.set(keySpec, commandId);
+    return {
+      dispose: () => {
+        if (this.bindings.get(keySpec) === commandId) this.bindings.delete(keySpec);
+      },
+    };
   }
 
   resolve(keySpec: string): string | undefined {
     return this.bindings.get(keySpec);
+  }
+
+  unbind(keySpec: string): void {
+    this.bindings.delete(keySpec);
+  }
+
+  entries(): Array<[string, string]> {
+    return [...this.bindings.entries()];
   }
 }
 
 export class ServiceRegistry {
   private services = new Map<string, unknown>();
 
-  register(name: string, impl: unknown): void {
+  register(name: string, impl: unknown): Disposable {
     this.services.set(name, impl);
+    return {
+      dispose: () => {
+        if (this.services.get(name) === impl) this.services.delete(name);
+      },
+    };
   }
 
   get<T>(name: string): T {

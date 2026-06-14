@@ -65,3 +65,30 @@ test('run reads the stored handler and still throws on unknown id', async () => 
   assert.equal(await reg.run('x', 41), 42);
   await assert.rejects(() => reg.run('nope', undefined), /unknown command: nope/);
 });
+
+import { KeybindingRegistry as KR2, ServiceRegistry as SR2 } from '../../src/core/registries.ts';
+
+test('keybindings: unbind removes a binding and entries lists all pairs', () => {
+  const keys = new KR2();
+  keys.bind('ctrl+s', 'file.save');
+  keys.bind('ctrl+p', 'palette.open');
+  assert.deepEqual(keys.entries().sort(), [['ctrl+p', 'palette.open'], ['ctrl+s', 'file.save']]);
+  keys.unbind('ctrl+s');
+  assert.equal(keys.resolve('ctrl+s'), undefined);
+});
+
+test('keybindings: bind returns an identity-guarded disposer', () => {
+  const keys = new KR2();
+  const sub = keys.bind('ctrl+s', 'file.save');
+  keys.bind('ctrl+s', 'file.saveAll'); // override
+  sub.dispose(); // must NOT remove the override
+  assert.equal(keys.resolve('ctrl+s'), 'file.saveAll');
+});
+
+test('services: register returns an identity-guarded disposer', () => {
+  const services = new SR2();
+  const sub = services.register('focus', { v: 1 });
+  services.register('focus', { v: 2 }); // overwrite
+  sub.dispose(); // must NOT remove the newer service
+  assert.deepEqual(services.get('focus'), { v: 2 });
+});
