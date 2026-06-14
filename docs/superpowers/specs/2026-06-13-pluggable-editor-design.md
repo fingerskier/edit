@@ -119,8 +119,9 @@ seam is explicit:
 **Events — "announce": broadcast, past-tense facts, fire-and-forget, no return value, no
 inter-listener ordering guarantees.** Listeners are isolated — one throwing reactor is logged and
 skipped, never aborting the rest of an emit.
-- `document:opened`, `document:activated`, `document:changed` (payload carries `inverse` for undo),
-  `document:saved`, `document:closed`.
+- `document:opened`, `document:activated`, `document:changed` (payload carries `inverse` for undo
+  and `selBefore`, the pre-edit selection, so history restores the caret exactly), `document:saved`,
+  `document:closed`.
 - `selection:moved`.
 - `fs:changed` (from the watcher; payload `{ dir, filename, eventType }`).
 - `key` (raw key forwarded by the adapter — see input model below).
@@ -190,3 +191,20 @@ This list is open-ended by design: anything beyond the bare-metal core is a plug
 - **Milestone 1 (usable editor):** core + TUI adapter + the four default plugins → single-pane
   editing with a directory list, command palette, undo/redo, save, and live file-watching.
 - Subsequent milestones pull from the future-plugins list (§6) as independent plugin work.
+
+## 9. Known limitations (accepted for M1)
+
+Surfaced and accepted during the Phase 2 review; revisit when they matter:
+
+- **Async key-dispatch window.** Key dispatch is fire-and-forget: the keymap runs a command and
+  returns without awaiting it. While an async command does I/O (e.g. `tree.open` awaiting
+  `openFile` before `focus.replace('editor')`), a key pressed in that brief window routes against
+  the *old* focus context. Tiny with local fs + a human typist. Future fix: serialize dispatch
+  behind the in-flight command promise.
+- **Directory-list selection is index-based.** On a `fs:changed` re-list, the selected row is kept
+  by index, not by entry identity, so an insertion/removal above the cursor shifts which file is
+  selected. A stale-list guard prevents older re-lists from clobbering newer ones; re-anchoring by
+  name is the future fix.
+- **No grapheme/visual-column awareness.** Editor columns are UTF-16 code-unit offsets within a
+  line; astral characters and combining marks make up/down jump visually. The TUI adapter will own
+  visual width.
