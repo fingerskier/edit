@@ -52,6 +52,7 @@ export async function createApp(options: AppOptions): Promise<App> {
     fs,
     config: config[plugin.name] ?? {},
     services,
+    subscriptions: [],
   });
 
   const host = new PluginHost(ctxFor);

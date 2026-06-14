@@ -89,3 +89,34 @@ test('plugins can drive the workspace through ctx.workspace', async () => {
   await createApp({ adapter, plugins: [plugin], roots: [] });
   assert.deepEqual(adapter.lastFrame()?.main, { kind: 'text', lines: ['hi'] });
 });
+
+test('host disposes ctx.subscriptions (reverse order) on app.dispose', async () => {
+  const adapter = new HeadlessAdapter();
+  const disposed: string[] = [];
+  const plugin: Plugin = {
+    name: 'sub',
+    activate(ctx) {
+      ctx.subscriptions.push({ dispose: () => disposed.push('first') });
+      ctx.subscriptions.push({ dispose: () => disposed.push('second') });
+    },
+  };
+  const app = await createApp({ adapter, plugins: [plugin], roots: [] });
+  await app.dispose();
+  assert.deepEqual(disposed, ['second', 'first']); // LIFO
+});
+
+test('a disposed view contribution stops appearing in frames', async () => {
+  const adapter = new HeadlessAdapter();
+  const plugin: Plugin = {
+    name: 'temp',
+    activate(ctx) {
+      const sub = ctx.view.contribute('status', () => ({ kind: 'status', segments: ['x'] }));
+      ctx.subscriptions.push(sub);
+    },
+  };
+  const app = await createApp({ adapter, plugins: [plugin], roots: [] });
+  assert.deepEqual(adapter.lastFrame()?.status, { kind: 'status', segments: ['x'] });
+  await app.dispose();
+  app.render();
+  assert.equal('status' in (adapter.lastFrame() ?? {}), false);
+});
