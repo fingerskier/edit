@@ -1,12 +1,15 @@
+import type { Disposable } from './disposable.js';
+
 export type Listener = (payload: any) => void;
 
 export class EventBus {
   private listeners = new Map<string, Set<Listener>>();
 
-  on(event: string, fn: Listener): void {
+  on(event: string, fn: Listener): Disposable {
     let set = this.listeners.get(event);
     if (!set) { set = new Set(); this.listeners.set(event, set); }
     set.add(fn);
+    return { dispose: () => this.off(event, fn) };
   }
 
   off(event: string, fn: Listener): void {

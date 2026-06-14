@@ -1,3 +1,5 @@
+import type { Disposable } from './disposable.js';
+
 export type Slot = 'tree' | 'main' | 'status' | 'overlay';
 
 export interface ListItem { label: string; style?: string }
@@ -16,8 +18,13 @@ export type ViewProvider = () => ViewModel | null;
 export class ViewRegistry {
   private providers = new Map<Slot, ViewProvider>();
 
-  contribute(slot: Slot, provider: ViewProvider): void {
+  contribute(slot: Slot, provider: ViewProvider): Disposable {
     this.providers.set(slot, provider);
+    return {
+      dispose: () => {
+        if (this.providers.get(slot) === provider) this.providers.delete(slot);
+      },
+    };
   }
 
   entries(): [Slot, ViewProvider][] { return [...this.providers.entries()]; }
