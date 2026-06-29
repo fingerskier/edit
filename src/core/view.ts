@@ -1,6 +1,6 @@
 import type { Disposable } from './disposable.js';
 
-export type Slot = 'tree' | 'main' | 'status' | 'overlay';
+export type Slot = 'tree' | 'main' | 'status' | 'panel' | 'overlay';
 
 export interface ListItem { label: string; style?: string }
 export interface StyleSpan { line: number; start: number; end: number; style: string }
@@ -9,6 +9,7 @@ export type Widget =
   | { kind: 'list'; items: ListItem[]; selected: number }
   | { kind: 'text'; lines: string[]; spans?: StyleSpan[]; cursors?: number[]; scroll?: number }
   | { kind: 'status'; segments: string[] }
+  | { kind: 'panel'; title?: string; body: Widget }
   | { kind: 'overlay'; title?: string; body: Widget };
 
 export type ViewModel = Widget;

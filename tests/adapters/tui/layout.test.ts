@@ -35,6 +35,28 @@ test('degrades gracefully on a tiny terminal (main keeps >=1 col)', () => {
   assert.equal(l.status.y, 2);
 });
 
+test('panel is hidden by default (height 0) and content fills above the status bar', () => {
+  const l = computeLayout(80, 24);
+  assert.equal(l.panel.height, 0);
+  assert.equal(l.tree.height, 23);
+  assert.equal(l.main.height, 23);
+});
+
+test('a requested panel reserves rows above the status bar; content shrinks to fit', () => {
+  const l = computeLayout(80, 24, { panelHeight: 6 });
+  assert.deepEqual(l.panel, { x: 0, y: 17, width: 80, height: 6 }); // rows 17..22
+  assert.equal(l.tree.height, 17); // rows 0..16
+  assert.equal(l.main.height, 17);
+  assert.equal(l.status.y, 23); // status row unmoved
+});
+
+test('panel height is clamped to the space above the status bar', () => {
+  const l = computeLayout(80, 5, { panelHeight: 100 });
+  assert.equal(l.panel.height, 4); // rows above status = 4
+  assert.equal(l.tree.height, 0);
+  assert.equal(l.main.height, 0);
+});
+
 test('overlay is centered within the content area', () => {
   const l = computeLayout(80, 24);
   assert.ok(l.overlay.width <= 80 && l.overlay.height <= 23);

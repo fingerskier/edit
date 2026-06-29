@@ -12,6 +12,13 @@ test('composer collects the latest view model per slot', () => {
   assert.deepEqual(frame, { tree: list, main: text });
 });
 
+test('the panel slot composes like any other slot', () => {
+  const reg = new ViewRegistry();
+  reg.contribute('panel', () => ({ kind: 'panel', title: 'Output', body: { kind: 'text', lines: ['ready'] } }));
+  const frame = new ViewComposer(reg).compose();
+  assert.equal(frame.panel?.kind, 'panel');
+});
+
 test('a provider returning null omits its slot from the frame', () => {
   const reg = new ViewRegistry();
   reg.contribute('overlay', () => null);
