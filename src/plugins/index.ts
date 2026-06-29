@@ -1,5 +1,6 @@
 import type { Plugin } from '../core/plugin-host.js';
 import keymap from './keymap.js';
+import quickInput from './quick-input.js';
 import editorView from './editor-view.js';
 import directoryList from './directory-list.js';
 import history from './history.js';
@@ -8,8 +9,9 @@ import commandPalette from './command-palette.js';
 import statusBar from './status-bar.js';
 
 // Load order matters: keymap MUST be first so its `focus` service and the sole
-// `key` listener exist before any other plugin activates (contract §F). status-bar
-// only contributes a view, so its position is irrelevant.
+// `key` listener exist before any other plugin activates (contract §F). quick-input
+// registers the `quickInput` service that command-palette consumes, so it precedes
+// the palette. status-bar only contributes a view, so its position is irrelevant.
 export function defaultPlugins(): Plugin[] {
-  return [keymap, editorView, directoryList, history, save, commandPalette, statusBar];
+  return [keymap, quickInput, editorView, directoryList, history, save, commandPalette, statusBar];
 }

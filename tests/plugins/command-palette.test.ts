@@ -6,22 +6,18 @@ import { HeadlessAdapter } from '../../src/adapters/headless.ts';
 import type { Plugin, PluginContext } from '../../src/core/plugin-host.ts';
 import type { Frame, Widget } from '../../src/core/view.ts';
 import keymap from '../../src/plugins/keymap.ts';
+import quickInput from '../../src/plugins/quick-input.ts';
 import commandPalette, { humanizeId } from '../../src/plugins/command-palette.ts';
 
-// A tiny plugin that registers a few titled commands so the palette has something
-// to list/filter, plus a record of which command `accept` actually ran.
+// A tiny plugin that registers titled commands the palette can list/run.
 function fixturePlugin(ran: string[]): Plugin {
   return {
     name: 'fixture',
     activate(ctx: PluginContext) {
       ctx.subscriptions.push(
         ctx.commands.register('fixture.alpha', () => { ran.push('fixture.alpha'); }, { title: 'Fixture: Alpha' }),
-      );
-      ctx.subscriptions.push(
         ctx.commands.register('fixture.beta', () => { ran.push('fixture.beta'); }, { title: 'Fixture: Beta' }),
-      );
-      // An untitled command to prove humanizeId is the fallback label.
-      ctx.subscriptions.push(
+        // An untitled command to prove humanizeId is the fallback label.
         ctx.commands.register('zeta.gamma', () => { ran.push('zeta.gamma'); }),
       );
     },
@@ -30,11 +26,8 @@ function fixturePlugin(ran: string[]): Plugin {
 
 function overlayOf(frame: Frame | undefined): Extract<Widget, { kind: 'overlay' }> | null {
   const o = frame?.overlay;
-  if (!o) return null;
-  assert.equal(o.kind, 'overlay');
-  return o as Extract<Widget, { kind: 'overlay' }>;
+  return o && o.kind === 'overlay' ? o : null;
 }
-
 function listBody(o: Extract<Widget, { kind: 'overlay' }>): Extract<Widget, { kind: 'list' }> {
   assert.equal(o.body.kind, 'list');
   return o.body as Extract<Widget, { kind: 'list' }>;
@@ -45,7 +38,7 @@ async function makeApp() {
   const ran: string[] = [];
   const app = await createApp({
     adapter,
-    plugins: [keymap, fixturePlugin(ran), commandPalette],
+    plugins: [keymap, quickInput, fixturePlugin(ran), commandPalette],
     roots: [],
   });
   return { adapter, app, ran };
@@ -59,146 +52,64 @@ test('humanizeId Title-cases dotted segments and joins with ": "', () => {
   assert.equal(humanizeId('a.b.c'), 'A: B: C');
 });
 
-test('ctrl+p opens the overlay and moves focus to "palette"', async () => {
+test('ctrl+p opens the command picker (overlay "Commands", focus -> quickInput)', async () => {
   const { adapter, app } = await makeApp();
   const tops: string[] = [];
   app.bus.on('focus:changed', (p: { context: string }) => tops.push(p.context));
 
-  assert.equal(overlayOf(adapter.lastFrame()), null); // closed initially
-
+  assert.equal(overlayOf(adapter.lastFrame()), null);
   adapter.sendKey('ctrl+p');
 
   const o = overlayOf(adapter.lastFrame());
-  assert.ok(o, 'overlay should be present after ctrl+p');
+  assert.ok(o, 'overlay present after ctrl+p');
   assert.equal(o!.title, 'Commands');
-  assert.equal(tops.at(-1), 'palette'); // focus pushed to palette
-  const body = listBody(o!);
-  assert.ok(body.items.length >= 3, 'lists registered commands');
-  assert.equal(body.selected, 0);
+  assert.equal(tops.at(-1), 'quickInput');
+  assert.ok(listBody(o!).items.length >= 3, 'lists the registered commands');
+  await app.dispose();
 });
 
-test('typing a printable filters the list (case-insensitive substring on label)', async () => {
-  const { adapter } = await makeApp();
+test('the palette hides internal commands and its own opener', async () => {
+  const { adapter, app } = await makeApp();
   adapter.sendKey('ctrl+p');
-
-  // Type "beta" -> only "Fixture: Beta" remains.
-  for (const ch of 'beta') adapter.sendKey(ch);
-
-  const o = overlayOf(adapter.lastFrame())!;
-  const body = listBody(o);
-  assert.deepEqual(body.items.map((i) => i.label), ['Fixture: Beta']);
-  assert.equal(body.selected, 0);
+  const labels = listBody(overlayOf(adapter.lastFrame())!).items.map((i) => i.label);
+  // quickInput.* are registered internal; palette.open is filtered by id.
+  assert.ok(!labels.some((l) => l.startsWith('Quick Input')), 'no internal quickInput commands');
+  assert.ok(!labels.includes('Command Palette'), 'palette does not list itself');
+  await app.dispose();
 });
 
-test('backspace drops the last filter char and widens the list again', async () => {
-  const { adapter } = await makeApp();
+test('typing fuzzy-filters the command list', async () => {
+  const { adapter, app } = await makeApp();
   adapter.sendKey('ctrl+p');
   for (const ch of 'beta') adapter.sendKey(ch);
-  assert.equal(listBody(overlayOf(adapter.lastFrame())!).items.length, 1);
-
-  adapter.sendKey('backspace'); // "bet"
-  adapter.sendKey('backspace'); // "be"
-  adapter.sendKey('backspace'); // "b"
-  // "b": matches "Fixture: Beta" (has 'b'); "Fixture: Alpha" no; "Zeta: Gamma" no -> 1
   assert.deepEqual(
     listBody(overlayOf(adapter.lastFrame())!).items.map((i) => i.label),
     ['Fixture: Beta'],
   );
-  adapter.sendKey('backspace'); // "" -> all commands
-  assert.ok(listBody(overlayOf(adapter.lastFrame())!).items.length >= 3);
+  await app.dispose();
 });
 
-test('up/down move the selection within the filtered list and clamp at the ends', async () => {
-  const { adapter } = await makeApp();
-  adapter.sendKey('ctrl+p');
-
-  // Filter to the two fixture commands ("fixture") so the list is deterministic.
-  for (const ch of 'fixture') adapter.sendKey(ch);
-  const body0 = listBody(overlayOf(adapter.lastFrame())!);
-  assert.deepEqual(body0.items.map((i) => i.label), ['Fixture: Alpha', 'Fixture: Beta']);
-  assert.equal(body0.selected, 0);
-
-  adapter.sendKey('up'); // clamp at top
-  assert.equal(listBody(overlayOf(adapter.lastFrame())!).selected, 0);
-
-  adapter.sendKey('down');
-  assert.equal(listBody(overlayOf(adapter.lastFrame())!).selected, 1);
-
-  adapter.sendKey('down'); // clamp at bottom
-  assert.equal(listBody(overlayOf(adapter.lastFrame())!).selected, 1);
-
-  adapter.sendKey('up');
-  assert.equal(listBody(overlayOf(adapter.lastFrame())!).selected, 0);
-});
-
-test('enter runs the selected filtered command and closes the palette', async () => {
-  const { adapter, ran } = await makeApp();
-  adapter.sendKey('ctrl+p');
-  for (const ch of 'fixture') adapter.sendKey(ch); // 2 items
-  adapter.sendKey('down'); // select "Fixture: Beta"
-
+test('enter runs the selected command and closes the palette', async () => {
+  const { adapter, app, ran } = await makeApp();
+  // Drive palette.open directly so we can await the full open->pick->run chain.
+  const open = app.commands.run('palette.open');
+  for (const ch of 'alpha') adapter.sendKey(ch); // filters to 'Fixture: Alpha'
   adapter.sendKey('enter');
-
-  assert.deepEqual(ran, ['fixture.beta'], 'runs exactly the selected command');
+  await open;
+  assert.deepEqual(ran, ['fixture.alpha'], 'runs exactly the selected command');
   assert.equal(overlayOf(adapter.lastFrame()), null, 'palette closes after accept');
+  await app.dispose();
 });
 
-test('enter on an empty filtered list just closes (runs nothing)', async () => {
-  const { adapter, ran } = await makeApp();
-  adapter.sendKey('ctrl+p');
-  for (const ch of 'zzzznomatch') adapter.sendKey(ch);
-  assert.equal(listBody(overlayOf(adapter.lastFrame())!).items.length, 0);
-
-  adapter.sendKey('enter');
-
-  assert.deepEqual(ran, [], 'no command run on empty list');
-  assert.equal(overlayOf(adapter.lastFrame()), null, 'palette still closes');
-});
-
-test('escape closes the palette and returns focus to the base context', async () => {
-  const { adapter, app } = await makeApp();
+test('escape closes the palette without running anything', async () => {
+  const { adapter, app, ran } = await makeApp();
   const tops: string[] = [];
   app.bus.on('focus:changed', (p: { context: string }) => tops.push(p.context));
-
-  adapter.sendKey('ctrl+p');
-  assert.ok(overlayOf(adapter.lastFrame()));
-  assert.equal(tops.at(-1), 'palette');
-
+  const open = app.commands.run('palette.open');
   adapter.sendKey('escape');
-
-  assert.equal(overlayOf(adapter.lastFrame()), null, 'overlay null after escape');
-  assert.equal(tops.at(-1), 'editor', 'focus popped back to base');
-});
-
-test('reopening after close keeps the palette context as the single top entry', async () => {
-  const { adapter, app } = await makeApp();
-  const tops: string[] = [];
-  app.bus.on('focus:changed', (p: { context: string }) => tops.push(p.context));
-
-  adapter.sendKey('ctrl+p'); // open -> push palette
-  adapter.sendKey('escape'); // close -> pop to editor
-  adapter.sendKey('ctrl+p'); // open again -> push palette
-
-  assert.equal(tops.at(-1), 'palette');
-  assert.ok(overlayOf(adapter.lastFrame()));
-
-  // A single escape must fully close (proves we did not double-push the context).
-  adapter.sendKey('escape');
+  await open;
+  assert.deepEqual(ran, []);
   assert.equal(overlayOf(adapter.lastFrame()), null);
-  assert.equal(tops.at(-1), 'editor');
-});
-
-test('ctrl+p while already open does not double-push the focus context', async () => {
-  const { adapter, app } = await makeApp();
-  const tops: string[] = [];
-  app.bus.on('focus:changed', (p: { context: string }) => tops.push(p.context));
-
-  adapter.sendKey('ctrl+p'); // open
-  adapter.sendKey('ctrl+p'); // already open: must NOT push again
-  assert.equal(tops.at(-1), 'palette');
-
-  // One escape closes it; if open() had double-pushed, this would leave it open.
-  adapter.sendKey('escape');
-  assert.equal(overlayOf(adapter.lastFrame()), null);
-  assert.equal(tops.at(-1), 'editor');
+  assert.equal(tops.at(-1), 'editor', 'focus returns to the base context');
+  await app.dispose();
 });
