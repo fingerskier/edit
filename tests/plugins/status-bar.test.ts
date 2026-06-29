@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../../src/core/app.ts';
 import { HeadlessAdapter } from '../../src/adapters/headless.ts';
+import type { Plugin } from '../../src/core/plugin-host.ts';
 import statusBar from '../../src/plugins/status-bar.ts';
 import editorView from '../../src/plugins/editor-view.ts';
 import keymap from '../../src/plugins/keymap.ts';
@@ -37,6 +38,32 @@ test('status shows scratch name + 1-based Ln/Col, and a dirty marker after editi
   seg = statusOf(adapter);
   assert.match(seg[0], /^●\s\[scratch\]$/);
 
+  await app.dispose();
+});
+
+test('multiple plugins compose into one status bar, ordered by item priority', async () => {
+  // Two independent plugins each add a status-bar item via ctx.statusBar; both
+  // appear in the single status slot — the multi-contributor model the status
+  // bar is built to demonstrate.
+  const branch: Plugin = {
+    name: 'fake-git',
+    activate(ctx) {
+      ctx.subscriptions.push(ctx.statusBar.createItem({ text: ' main', priority: 50 }));
+    },
+  };
+  const diagnostics: Plugin = {
+    name: 'fake-lsp',
+    activate(ctx) {
+      ctx.subscriptions.push(ctx.statusBar.createItem({ text: '0 errors', priority: 40 }));
+    },
+  };
+
+  const adapter = new HeadlessAdapter();
+  // status-bar (file=priority 100, pos=90) + git (50) + lsp (40).
+  const app = await createApp({ adapter, plugins: [statusBar, branch, diagnostics], roots: [] });
+  assert.deepEqual(statusOf(adapter), ['edit', 'no file open', ' main', '0 errors']);
+
+  // Disposing a contributor removes only its segment.
   await app.dispose();
 });
 

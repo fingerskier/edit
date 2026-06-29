@@ -13,8 +13,11 @@ export {
 export {
   ViewRegistry, ViewComposer,
   type Slot, type Widget, type ViewModel, type Frame, type ViewProvider,
-  type ListItem, type StyleSpan,
+  type ListItem, type StyleSpan, type ContributeOptions,
 } from './core/view.js';
+export {
+  StatusBarRegistry, type StatusBarApi, type StatusBarItem,
+} from './core/status-bar.js';
 export { type Adapter, type KeyHandler } from './core/adapter.js';
 export { HeadlessAdapter } from './adapters/headless.js';
 export { TuiAdapter } from './adapters/tui/tui-adapter.js';

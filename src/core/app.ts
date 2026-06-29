@@ -4,6 +4,7 @@ import { Watcher } from './watcher.js';
 import { Workspace } from './workspace.js';
 import { CommandRegistry, KeybindingRegistry, ServiceRegistry } from './registries.js';
 import { ViewRegistry, ViewComposer } from './view.js';
+import { StatusBarRegistry } from './status-bar.js';
 import { PluginHost, type Plugin, type PluginContext } from './plugin-host.js';
 import type { Adapter } from './adapter.js';
 
@@ -35,16 +36,28 @@ export async function createApp(options: AppOptions): Promise<App> {
   const services = new ServiceRegistry();
   const views = new ViewRegistry();
   const composer = new ViewComposer(views);
+  const statusBar = new StatusBarRegistry();
 
   for (const root of roots) watcher.watch(root);
 
   const render = () => adapter.render(composer.compose());
 
+  // One internal provider renders the aggregated status-bar items as the single
+  // `status` slot. Plugins contribute via ctx.statusBar.createItem(...) rather
+  // than owning the slot, so many of them can compose into the bar at once. The
+  // slot is omitted while no item has visible text (preserves prior behaviour
+  // for apps without a status plugin).
+  views.contribute('status', () => {
+    const segments = statusBar.segments();
+    return segments.length > 0 ? { kind: 'status', segments } : null;
+  });
+  statusBar.onDidChange(render);
+
   const ctxFor = (plugin: Plugin): PluginContext => ({
     commands,
     keys,
     view: {
-      contribute: (slot, provider) => views.contribute(slot, provider),
+      contribute: (slot, provider, opts) => views.contribute(slot, provider, opts),
       invalidate: render,
     },
     events: bus,
@@ -52,6 +65,7 @@ export async function createApp(options: AppOptions): Promise<App> {
     fs,
     config: config[plugin.name] ?? {},
     services,
+    statusBar,
     subscriptions: [],
   });
 
