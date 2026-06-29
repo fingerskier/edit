@@ -48,6 +48,9 @@ const statusBar: Plugin = {
       ctx.events.on('selection:moved', refresh),
       ctx.events.on('document:activated', refresh),
       ctx.events.on('document:saved', refresh),
+      // Closing the LAST document emits only 'document:closed' (no survivor to
+      // activate), so refresh here too or the bar would keep the closed file.
+      ctx.events.on('document:closed', refresh),
     );
   },
 };

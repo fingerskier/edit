@@ -41,6 +41,20 @@ test('status shows scratch name + 1-based Ln/Col, and a dirty marker after editi
   await app.dispose();
 });
 
+test('status returns to the no-file placeholder after the last document closes', async () => {
+  const adapter = new HeadlessAdapter();
+  const app = await createApp({ adapter, plugins: [keymap, editorView, statusBar], roots: [] });
+
+  const doc = app.workspace.openScratch('hello');
+  assert.equal(statusOf(adapter)[0], '[scratch]');
+
+  app.workspace.closeDocument(doc.id); // last doc: emits only 'document:closed'
+  app.render(); // a later render must not show the stale closed file
+  assert.deepEqual(statusOf(adapter), ['edit', 'no file open']);
+
+  await app.dispose();
+});
+
 test('multiple plugins compose into one status bar, ordered by item priority', async () => {
   // Two independent plugins each add a status-bar item via ctx.statusBar; both
   // appear in the single status slot — the multi-contributor model the status
