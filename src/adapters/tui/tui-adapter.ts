@@ -39,7 +39,11 @@ export class TuiAdapter implements Adapter {
 
   private paint(frame: Frame): void {
     const { cols, rows } = this.term.size();
-    const screen = renderFrame(frame, computeLayout(cols, rows));
+    // Reserve rows for the bottom panel only when something contributes to it
+    // (~30% of the height above the status bar, clamped); computeLayout clamps to
+    // the actually-available space.
+    const panelHeight = frame.panel ? Math.max(3, Math.min(12, Math.round((rows - 1) * 0.3))) : 0;
+    const screen = renderFrame(frame, computeLayout(cols, rows, { panelHeight }));
     // Paint with the cursor hidden (so it doesn't streak across the repaint), then
     // either place + show the editor caret, or leave it hidden (e.g. overlay up).
     let out = HIDE_CURSOR + screenToAnsi(screen);

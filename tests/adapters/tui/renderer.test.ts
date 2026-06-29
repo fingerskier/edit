@@ -62,6 +62,22 @@ test('overlay: draws a bordered box with title, and suppresses the editor caret'
   assert.equal(s.cursor, null, 'caret hidden while the overlay is open');
 });
 
+test('panel: draws a titled bar above the status row with its body below', () => {
+  const layout = computeLayout(80, 24, { panelHeight: 5 });
+  const frame: Frame = {
+    main: { kind: 'text', lines: ['code'], cursors: [0] },
+    panel: { kind: 'panel', title: 'Problems', body: { kind: 'list', items: [{ label: 'error: oops' }], selected: 0 } },
+  };
+  const s = renderFrame(frame, layout);
+  // Title row is an inverse bar at the top of the panel region.
+  assert.ok(row(s, layout.panel.y).includes('Problems'));
+  assert.equal(isRowInverse(s, layout.panel.y), true);
+  // Body renders below the title row.
+  assert.ok(row(s, layout.panel.y + 1).includes('error: oops'));
+  // The editor caret still renders (a panel does not suppress it like an overlay does).
+  assert.ok(s.cursor, 'caret still placed with a panel open');
+});
+
 test('main: long line scrolls horizontally so the caret stays visible', () => {
   const layout = computeLayout(40, 10);
   const long = 'x'.repeat(200);

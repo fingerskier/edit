@@ -81,7 +81,8 @@ The core provides *only* mechanism:
 
 - `ctx.commands` — register/run command IDs.
 - `ctx.keys` — bind key specs → command IDs.
-- `ctx.view.contribute(slot, () => ViewModel)` and `ctx.view.invalidate()`.
+- `ctx.view.contribute(slot, () => ViewModel, { priority? })` and `ctx.view.invalidate()`.
+- `ctx.statusBar.createItem({ text?, priority? })` — own one or more status-bar items.
 - `ctx.events` — `on` / `emit`.
 - `ctx.workspace` — roots, active document, document set.
 - `ctx.fs` — file operations and watcher subscriptions.
@@ -93,6 +94,23 @@ The core provides *only* mechanism:
 - `main` — center
 - `status` — bottom
 - `overlay` — floating (modals, palettes)
+
+### Multi-contributor slots (P1)
+Slots are **additive**: many plugins may `contribute` a provider to the same slot.
+The view composer resolves contenders per slot by **priority** (higher wins; ties
+broken by latest registration) and falls through to the next contender when the
+winner returns `null` or throws. This replaces the original one-provider-per-slot
+(last-writer-wins) model so independent plugins can target the same region — e.g.
+a modal overlay out-prioritising the command palette — without clobbering each
+other's registration.
+
+The **status bar** is the first genuinely-composited region: rather than one
+plugin owning the `status` slot, every plugin contributes **items** via
+`ctx.statusBar.createItem(...)`. The core renders all visible items, ordered by
+priority, into the single `status` ViewModel — so the editor's file/position
+items, a future git branch item, and an LSP diagnostics count coexist. Items are
+stateful handles (`item.text = …`, `show()`/`hide()`, `dispose()`); mutating one
+re-renders the bar.
 
 ### Widget vocabulary (every adapter implements)
 Plugins emit these as **plain data** — never raw drawing calls:

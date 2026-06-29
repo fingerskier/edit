@@ -110,6 +110,21 @@ function paintStatus(screen: Screen, rect: Rect, widget: Extract<Widget, { kind:
   putText(screen, rect.x, rect.y, widget.segments.join('  '), rect.width, true);
 }
 
+// --- bottom panel (output / problems / …): an inverse title row + a body below ---
+function paintPanel(screen: Screen, rect: Rect, widget: Extract<Widget, { kind: 'panel' }>): void {
+  if (rect.width <= 0 || rect.height <= 0) return;
+  // Title row (reverse video) delineates the panel from the editor above it.
+  fillRow(screen, rect, rect.y, true);
+  putText(screen, rect.x, rect.y, ' ' + (widget.title ?? 'Panel'), rect.width, true);
+  if (rect.height < 2) return;
+
+  const inner: Rect = { x: rect.x, y: rect.y + 1, width: rect.width, height: rect.height - 1 };
+  const body = widget.body;
+  if (body.kind === 'list') paintList(screen, inner, body);
+  else if (body.kind === 'text') paintText(screen, inner, body);
+  else if (body.kind === 'status') putText(screen, inner.x, inner.y, body.segments.join('  '), inner.width);
+}
+
 // --- overlay box (command palette) ---
 function paintOverlay(screen: Screen, rect: Rect, widget: Extract<Widget, { kind: 'overlay' }>): void {
   if (rect.width < 2 || rect.height < 2) return;
@@ -159,6 +174,8 @@ export function renderFrame(frame: Frame, layout: Layout): Screen {
   if (frame.main && frame.main.kind === 'text') {
     screen.cursor = paintText(screen, layout.main, frame.main);
   }
+
+  if (frame.panel && frame.panel.kind === 'panel') paintPanel(screen, layout.panel, frame.panel);
 
   if (frame.status && frame.status.kind === 'status') paintStatus(screen, layout.status, frame.status);
 

@@ -1,153 +1,69 @@
-# TODO: Milestone Implementation Plan (SPECIFICATION.md Part 15)
+# Roadmap
 
-This checklist breaks each milestone into actionable implementation steps.
+Phased plan for **`edit` — a VS Code for the CLI** (extensibility model). This
+supersedes the original `M0–M5` checklist, which tracked the abandoned
+monolithic design. See [`SPECIFICATION.md`](./SPECIFICATION.md) for context.
 
-## M0 — Bootstrap
-- [x] Create npm package scaffold:
-  - [x] Initialize package metadata (`name`, `version`, `type`, `bin`).
-  - [x] Add `bin` entry for `edit` command.
-  - [x] Configure TypeScript compile target and output directories.
-  - [x] Add runtime entrypoint and build scripts (`build`, `dev`, `start`).
-- [x] Implement CLI interface:
-  - [x] Parse `edit [paths...]`, `--help`, and `--version`.
-  - [x] Validate unknown/invalid flags and return exit code `2`.
-  - [x] Print readable usage/help text.
-- [x] Implement app lifecycle boot sequence:
-  - [x] `init` stage for loading config/runtime state.
-  - [x] `render loop` stage for frame scheduling and input polling.
-  - [x] `shutdown` stage for cleanup and terminal restore.
-- [x] Build renderer skeleton:
-  - [x] Define fixed layout regions: tree, editor, status, palette overlay.
-  - [x] Render placeholder components for each region.
-  - [x] Verify frame stability with no feature logic.
-- [x] Add command registry foundation:
-  - [x] Register `app.quit`, `palette.open`, `tree.focus`, `editor.focus`.
-  - [x] Wire command dispatch from key/input events.
-  - [x] Add minimal tests for registration + execution.
-- [x] Exit criteria validation:
-  - [x] Confirm `npx edit` launches stable TUI on macOS/Linux/Windows.
-  - [x] Confirm unknown flags return code `2` and help text.
+Legend: `[x]` shipped · `[~]` partial · `[ ]` not started.
 
-## M1 — Core editing
-- [x] Implement text buffer core:
-  - [x] Build piece-table structure and storage.
-  - [x] Implement insert/delete/replace operations.
-  - [x] Add invariants and fuzz/property tests for buffer correctness.
-- [x] Implement cursor + selection model:
-  - [x] Single cursor movement primitives.
-  - [x] Multi-cursor representation and normalization rules.
-  - [x] Selection anchor/focus handling across edits.
-- [x] Implement undo/redo history:
-  - [x] Transaction model for grouped edits.
-  - [x] Typing coalescing heuristics (time + cursor continuity).
-  - [x] Undo/redo stack limits and branching behavior.
-- [x] Implement file I/O + dirty tracking:
-  - [x] Open file into buffer with encoding/newline handling.
-  - [x] Save buffer to disk with atomic write strategy.
-  - [x] Track dirty state transitions and reset on save/reload.
-- [x] Wire status line:
-  - [x] Show file name.
-  - [x] Show row/column cursor position.
-  - [x] Show dirty marker.
-- [x] Exit criteria validation:
-  - [x] Verify open/edit/undo/redo/save for files >= 5 MB.
-  - [x] Benchmark keypress-to-render latency during sustained typing.
+## Status & handoff
 
-## M2 — Workspace UX
-- [ ] Implement file tree UI:
-  - [x] Always-visible panel and collapsible node model.
-  - [x] Keyboard navigation (up/down/open/collapse/focus handoff).
-- [ ] Implement multi-root workspace:
-  - [ ] Accept multiple root paths from CLI.
-  - [ ] Normalize labels and resolve duplicate names.
-  - [ ] Render merged root list consistently.
-- [ ] Implement quick open:
-  - [ ] Build path indexer for workspace files.
-  - [x] Add fuzzy matcher and scoring.
-  - [x] Add keyboard-driven open flow.
-- [ ] Implement file watcher integration:
-  - [ ] Watch create/rename/delete/modify events.
-  - [ ] Debounce refresh and avoid event storms.
-  - [ ] Reconcile watcher state with tree/index state.
-- [ ] Handle external file changes:
-  - [ ] Auto-reload unchanged buffers.
-  - [ ] Prompt on conflicts when local buffer is dirty.
-  - [ ] Add conflict resolution actions (reload/keep/diff later).
-- [ ] Exit criteria validation:
-  - [ ] Verify unified roots render correctly for multiple paths.
-  - [ ] Verify live tree refresh for create/rename/delete without restart.
+- **Shipped (PR #6):** all of **P1** except editor tabs — multi-contributor view
+  slots, the status-bar item API, and the bottom panel slot — plus the first
+  **P2** slice: the reusable fuzzy `quickInput` service + `CommandMeta.internal`.
+  Reconciled the vision/roadmap docs. 261 tests green.
+- **Next up (separate PR):** **editor tabs** (closes out P1; `DocumentSet`
+  already holds the docs — needs a tab-strip in `main` + a close-document
+  command), then **`TreeDataProvider`** (re-bases the flat directory-list into a
+  nested, multi-root tree and unblocks SCM/diagnostics trees).
+- Pick up from this checklist; mark items `[x]` as they land and keep
+  `SPECIFICATION.md` §7 / `README.md` in sync.
 
-## M3 — Power features
-- [ ] Implement command palette:
-  - [ ] Reusable modal UI + input model.
-  - [ ] Fuzzy command search and ranking.
-  - [ ] Command preview/help metadata support.
-- [ ] Implement chained hotkey resolver:
-  - [ ] Key chord state machine (`Ctrl+K` style prefixes).
-  - [ ] Timeout/cancel behavior for partial chords.
-  - [ ] Context predicates for scope-aware key handling.
-- [ ] Implement custom keymap loading:
-  - [x] Load user keymap config file.
-  - [ ] Validate schema and command existence.
-  - [ ] Detect/report binding conflicts with warnings.
-- [ ] Implement clipboard history ring:
-  - [ ] Ring buffer store with configurable maximum size.
-  - [ ] Copy/cut integration hooks.
-  - [ ] Paste-from-history selection command.
-- [ ] Implement theme loader/editor flow:
-  - [ ] Load theme definitions from config files.
-  - [ ] Apply theme styles to all regions.
-  - [ ] Watch theme file and live-reload on save.
-- [ ] Exit criteria validation:
-  - [ ] Verify command remapping works for critical editor/tree/palette actions.
-  - [ ] Verify palette can invoke every registered command.
+## P0 — Core foundation ✅
+- [x] Headless core: event bus, document/document-set, reversible-op buffer, file I/O, watcher.
+- [x] Plugin host: `activate(ctx)`/`deactivate`, `ctx.subscriptions` disposal.
+- [x] Contribution registries: commands, keybindings, views, services.
+- [x] UI-agnostic adapter interface + headless adapter for tests.
 
-## M4 — LSP
-- [ ] Implement LSP process manager:
-  - [ ] Start/initialize/shutdown lifecycle.
-  - [ ] Crash detection and reconnect strategy.
-  - [ ] Per-workspace/per-language server routing.
-- [ ] Implement document sync:
-  - [ ] Version counters per document.
-  - [ ] Incremental change events from edit operations.
-  - [ ] Open/close/save notifications.
-- [ ] Surface diagnostics:
-  - [ ] Parse/persist diagnostics by URI + version.
-  - [ ] Render inline markers.
-  - [ ] Aggregate status line summary.
-- [ ] Implement navigation/intel commands:
-  - [ ] Go-to-definition.
-  - [ ] Hover details.
-  - [ ] Document symbols navigation.
-- [ ] Add resiliency guards:
-  - [ ] Request timeout handling.
-  - [ ] Staleness checks for out-of-date responses.
-  - [ ] Non-blocking failure paths to preserve editor input.
-- [ ] Exit criteria validation:
-  - [ ] Verify at least one mainstream server (e.g., TypeScript) end-to-end.
-  - [ ] Verify crash/restart path does not freeze input.
+## M1 — Usable editor ✅
+- [x] TUI adapter (key decoder, layout, renderer, terminal) + `edit` CLI entrypoint.
+- [x] Default plugins: keymap (focus stack + sole key listener), editor-view,
+      directory-list, history (undo/redo), save (+ autosave), command-palette, status-bar.
+- [x] Single-pane edit, open from tree, save, undo/redo, live file-watch, quit.
 
-## M5 — Hardening
-- [ ] Implement instrumentation:
-  - [ ] Add `--profile-startup` timing probes.
-  - [ ] Add `--profile-render` frame timing probes.
-  - [ ] Export profile results in machine-readable + human-readable formats.
-- [ ] Optimize performance hotspots:
-  - [ ] Large-file editing path profiling and optimization.
-  - [ ] Deep tree rendering and virtualization optimizations.
-  - [ ] Reduce allocations in hot input/render loops.
-- [ ] Validate cross-platform keys:
-  - [ ] Normalize modifier mapping for macOS/Linux/Windows.
-  - [ ] Build compatibility test matrix for key combinations.
-  - [ ] Fix edge cases in terminal-specific key encoding.
-- [ ] Build CI matrix:
-  - [ ] Add unit test workflow for all supported OS families.
-  - [ ] Add integration + smoke tests with representative fixtures.
-  - [ ] Enforce required checks before release.
-- [ ] Prepare release operations:
-  - [ ] Define npm publish checklist.
-  - [ ] Define semantic versioning and changelog process.
-  - [ ] Define rollback and hotfix plan.
-- [ ] Exit criteria validation:
-  - [ ] Confirm cold start/edit responsiveness meets Section 11 targets.
-  - [ ] Confirm CI is green across supported operating systems.
+## P1 — Workbench foundations
+- [x] Multi-contributor view slots resolved by priority (no more last-writer-wins).
+- [x] Status-bar **item** API (`ctx.statusBar.createItem`) — many plugins compose the bar.
+- [x] Bottom **panel** slot (output/problems/terminal region) + renderer/layout.
+- [ ] Editor **tabs** over the existing multi-document `DocumentSet` (one active doc;
+      tab-strip widget in `main`).
+
+## P2 — Extension platform
+- [x] Reusable fuzzy **`quickInput`** service + subsequence fuzzy scorer (`core/fuzzy.ts`).
+- [x] `CommandMeta.internal` to hide transient UI commands from the palette.
+- [ ] **`TreeDataProvider`** abstraction (re-base directory-list on it; let other plugins contribute trees).
+- [ ] **Decorations** API (gutter/inline) for diagnostics, git, search highlights.
+- [ ] **Settings/config schema** contribution (defaults + validation; a settings quick-pick).
+- [ ] Plugin **manifest** (`contributes`/`activationEvents`/`engines`) + **lazy activation**.
+- [ ] **Menu / context-menu** contribution points; chorded keys + `when`-clause predicates.
+
+## P3 — Distribution
+- [ ] `edit plugin add/remove/list/enable/disable` CLI.
+- [ ] Manifest-based install; version/engine compatibility checks.
+- [ ] Per-workspace plugin recommendations.
+
+## P4 — Flagship plugins (each validates a P2 API)
+- [ ] `fuzzy-open` — workspace file quick-open (recursive index + `quickInput`).
+- [ ] Nested, collapsible, **multi-root** tree (current directory-list is flat, single-root).
+- [ ] `multiple-cursors`, `clipboard-history`.
+- [ ] `syntax-highlighting` (tree-sitter) via the decorations API.
+- [ ] `lsp` — diagnostics (panel + decorations), definition, hover, document symbols.
+- [ ] `themes` (the `StyleSpan`/`style` fields finally drive color).
+- [ ] `git` (gutter + status), `search` (panel + decorations), `terminal` (panel).
+
+## P5 — Hardening
+- [ ] Piece-table buffer behind the existing `TextBuffer` interface; large-file perf.
+- [ ] Fix the async key-dispatch race (serialize dispatch behind the in-flight command).
+- [ ] Cross-platform key normalization; CI matrix (unit + integration + smoke on macOS/Linux/Windows).
+- [ ] Atomic-write autosave + dirty-buffer recovery journal.
+- [ ] Publish a stable `edit` API types package for third-party plugin authors.

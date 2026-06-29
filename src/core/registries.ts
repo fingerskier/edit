@@ -4,6 +4,8 @@ export type CommandHandler = (args: any) => any | Promise<any>;
 
 export interface CommandMeta {
   title?: string;
+  /** Hide this command from the command palette (e.g. transient UI commands). */
+  internal?: boolean;
 }
 
 interface CommandEntry {
