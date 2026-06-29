@@ -6,6 +6,19 @@ monolithic design. See [`SPECIFICATION.md`](./SPECIFICATION.md) for context.
 
 Legend: `[x]` shipped · `[~]` partial · `[ ]` not started.
 
+## Status & handoff
+
+- **Shipped (PR #6):** all of **P1** except editor tabs — multi-contributor view
+  slots, the status-bar item API, and the bottom panel slot — plus the first
+  **P2** slice: the reusable fuzzy `quickInput` service + `CommandMeta.internal`.
+  Reconciled the vision/roadmap docs. 261 tests green.
+- **Next up (separate PR):** **editor tabs** (closes out P1; `DocumentSet`
+  already holds the docs — needs a tab-strip in `main` + a close-document
+  command), then **`TreeDataProvider`** (re-bases the flat directory-list into a
+  nested, multi-root tree and unblocks SCM/diagnostics trees).
+- Pick up from this checklist; mark items `[x]` as they land and keep
+  `SPECIFICATION.md` §7 / `README.md` in sync.
+
 ## P0 — Core foundation ✅
 - [x] Headless core: event bus, document/document-set, reversible-op buffer, file I/O, watcher.
 - [x] Plugin host: `activate(ctx)`/`deactivate`, `ctx.subscriptions` disposal.
