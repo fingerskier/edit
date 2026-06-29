@@ -51,6 +51,17 @@ const quickInput: Plugin = {
       s.selected = len === 0 ? 0 : Math.max(0, Math.min(len - 1, s.selected));
     };
 
+    // If the app is torn down while a picker is open, settle its pending promise
+    // as cancelled so awaiters (e.g. palette.open) don't hang forever.
+    ctx.subscriptions.push({
+      dispose: () => {
+        if (!session) return;
+        const { resolve } = session;
+        session = null;
+        resolve(undefined);
+      },
+    });
+
     // --- overlay view (slot 'overlay') ---
     ctx.subscriptions.push(
       ctx.view.contribute('overlay', (): Widget | null => {

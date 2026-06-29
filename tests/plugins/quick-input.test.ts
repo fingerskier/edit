@@ -116,6 +116,14 @@ test('opening a second picker while one is active does not double-push focus', a
   await app.dispose();
 });
 
+test('disposing the app settles a pending picker as cancelled (no hang)', async () => {
+  const { app, results } = await makeApp();
+  const run = app.commands.run('demo.pick'); // opens and is left pending
+  await app.dispose();
+  await run; // must resolve, not hang
+  assert.deepEqual(results, [undefined]);
+});
+
 test('a picker can be reopened after closing', async () => {
   const { adapter, app } = await makeApp();
   void app.commands.run('demo.pick');
