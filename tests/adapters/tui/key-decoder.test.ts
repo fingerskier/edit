@@ -46,6 +46,8 @@ const cases: Array<[string, string, string[]]> = [
   ['home (1~)', '\x1b[1~', ['home']],
   ['end (4~)', '\x1b[4~', ['end']],
   ['delete (3~)', '\x1b[3~', ['delete']],
+  ['pageup (5~)', '\x1b[5~', ['pageup']],
+  ['pagedown (6~)', '\x1b[6~', ['pagedown']],
   ['insert (2~) ignored', '\x1b[2~', []],
 
   // modified arrows (the contract needs alt+left / alt+right for focus toggle)
@@ -54,6 +56,8 @@ const cases: Array<[string, string, string[]]> = [
   ['ctrl+left', '\x1b[1;5D', ['ctrl+left']],
   ['meta+left folds to alt+left', '\x1b[1;9D', ['alt+left']],
   ['ctrl+delete', '\x1b[3;5~', ['ctrl+delete']],
+  ['ctrl+pageup', '\x1b[5;5~', ['ctrl+pageup']],
+  ['ctrl+pagedown', '\x1b[6;5~', ['ctrl+pagedown']],
 
   // alt + char via ESC-prefix
   ['alt+b', '\x1bb', ['alt+b']],

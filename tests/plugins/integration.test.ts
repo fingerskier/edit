@@ -27,8 +27,10 @@ test('end-to-end: open from tree, edit, save, undo, open palette', async () => {
     const adapter = new HeadlessAdapter();
     const app = await createApp({ adapter, plugins: defaultPlugins(), roots: [dir] });
 
-    // The tree lists a.txt (selected index 0). Focus the tree, open the file.
+    // Nested tree: root folder is selected first; move onto a.txt, then open.
     adapter.sendKey('alt+left'); // global -> tree.focus
+    await settle();
+    adapter.sendKey('down');     // select a.txt under the expanded root
     await settle();
     // tree.open (bound to tree:enter) is async: it awaits openFile then calls
     // focus.replace('editor'). Wait for the focus:changed event that confirms

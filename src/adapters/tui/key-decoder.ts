@@ -136,7 +136,9 @@ function tildeToBase(n: string): string | undefined {
     case '4':
     case '8': return 'end';
     case '3': return 'delete';
-    default: return undefined; // 2=insert, 5/6=pgup/pgdn: unused in M1
+    case '5': return 'pageup';
+    case '6': return 'pagedown';
+    default: return undefined; // 2=insert unused
   }
 }
 

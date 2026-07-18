@@ -26,8 +26,10 @@ test('TUI e2e: open from tree, type, save, undo, open palette, quit', async () =
     // Initial paint shows the tree entry.
     assert.ok(term.lastWrite().includes('a.txt'), 'tree lists a.txt');
 
-    // Focus the tree with a real alt+left escape sequence, then open with Enter.
+    // Focus the tree, move onto a.txt (root folder is selected first), then open.
     term.feedRaw('\x1b[1;3D'); // alt+left -> tree.focus
+    await settle();
+    term.feedRaw('\x1b[B'); // down -> select a.txt under the expanded root
     await settle();
     const editorFocused = new Promise<void>((resolve) => {
       const sub = app.bus.on('focus:changed', (e: { context: string }) => {

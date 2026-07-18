@@ -1,7 +1,7 @@
 {
-  "name": "edit",
+  "name": "@fingerskier/edit",
   "version": "2026.5.5",
-  "description": "Lightning-fast cross-platform CLI text editor",
+  "description": "Lightning-fast cross-platform CLI text editor — VS Code's extensibility model for the terminal",
   "type": "module",
   "bin": {
     "edit": "dist/cli.js"
@@ -13,11 +13,33 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/cli.js",
     "dev": "tsx src/cli.ts",
-    "test": "node --import tsx --test \"tests/**/*.test.ts\""
+    "test": "node --import tsx --test \"tests/**/*.test.ts\"",
+    "prepublishOnly": "npm test && npm run build"
   },
   "engines": {
     "node": ">=20"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fingerskier/edit.git"
+  },
+  "homepage": "https://github.com/fingerskier/edit#readme",
+  "bugs": {
+    "url": "https://github.com/fingerskier/edit/issues"
+  },
+  "author": "Matt Currier",
+  "keywords": [
+    "editor",
+    "cli",
+    "tui",
+    "terminal",
+    "text-editor",
+    "plugins"
+  ],
+  "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.15.19",
     "tsx": "^4.19.3",

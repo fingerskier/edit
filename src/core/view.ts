@@ -1,14 +1,23 @@
 import type { Disposable } from './disposable.js';
 
-export type Slot = 'tree' | 'main' | 'status' | 'panel' | 'overlay';
+export type Slot = 'tree' | 'main' | 'tabs' | 'status' | 'panel' | 'overlay';
 
 export interface ListItem { label: string; style?: string }
 export interface StyleSpan { line: number; start: number; end: number; style: string }
+
+/** One entry in the editor tab strip (multi-document chrome above the main pane). */
+export interface TabItem {
+  id: string;
+  /** Display label (basename or "Untitled"; may include a dirty marker). */
+  label: string;
+  dirty?: boolean;
+}
 
 export type Widget =
   | { kind: 'list'; items: ListItem[]; selected: number }
   | { kind: 'text'; lines: string[]; spans?: StyleSpan[]; cursors?: number[]; scroll?: number }
   | { kind: 'status'; segments: string[] }
+  | { kind: 'tabs'; items: TabItem[]; activeIndex: number }
   | { kind: 'panel'; title?: string; body: Widget }
   | { kind: 'overlay'; title?: string; body: Widget };
 

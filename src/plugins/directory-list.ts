@@ -1,108 +1,194 @@
+// Nested, collapsible, multi-root directory tree for the `tree` slot.
+// Each workspace root is a top-level expandable folder; Enter opens files or
+// toggles directory expand/collapse. Children load lazily on first expand.
+
+import { basename, join } from 'node:path';
 import type { Plugin, PluginContext } from '../core/plugin-host.js';
 import type { DirEntry } from '../core/file-system.js';
 import type { ViewModel } from '../core/view.js';
 import type { FocusService } from './keymap.js';
-import { join } from 'node:path';
+
+export interface TreeRow {
+  /** Absolute path of the file or directory. */
+  path: string;
+  /** Display basename. */
+  name: string;
+  isDir: boolean;
+  depth: number;
+}
+
+/** Build the visible flattened rows for the given roots / expansion / cache. */
+export function buildTreeRows(
+  roots: string[],
+  expanded: ReadonlySet<string>,
+  children: ReadonlyMap<string, DirEntry[]>,
+): TreeRow[] {
+  const rows: TreeRow[] = [];
+
+  const walk = (path: string, name: string, isDir: boolean, depth: number): void => {
+    rows.push({ path, name, isDir, depth });
+    if (!isDir || !expanded.has(path)) return;
+    const kids = children.get(path) ?? [];
+    for (const k of kids) {
+      walk(join(path, k.name), k.name, k.isDir, depth + 1);
+    }
+  };
+
+  for (const root of roots) {
+    const name = basename(root) || root;
+    walk(root, name, true, 0);
+  }
+  return rows;
+}
+
+/** Indent + chevron (dirs) or alignment spaces (files) + name. */
+export function formatTreeLabel(row: TreeRow, expanded: ReadonlySet<string>): string {
+  const pad = '  '.repeat(row.depth);
+  if (row.isDir) {
+    const chev = expanded.has(row.path) ? '▾ ' : '▸ ';
+    return `${pad}${chev}${row.name}/`;
+  }
+  return `${pad}  ${row.name}`;
+}
 
 const directoryList: Plugin = {
   name: 'directory-list',
   async activate(ctx: PluginContext): Promise<void> {
-    const root: string | undefined = ctx.workspace.roots[0];
+    const roots = ctx.workspace.roots;
 
-    let entries: DirEntry[] = [];
+    /** Absolute paths of expanded directories (roots start expanded). */
+    const expanded = new Set<string>(roots);
+    /** Cached listings for paths we have loaded. */
+    const children = new Map<string, DirEntry[]>();
     let selected = 0;
 
-    // Monotonic token: only the newest re-list may commit its result. Older
-    // in-flight re-lists (started before a newer fs:changed) are discarded so a
-    // stale snapshot can't clobber a fresher one (M1 staleness guard).
+    // Monotonic token: only the newest load/refresh may commit (staleness guard).
     let listToken = 0;
 
+    const rows = (): TreeRow[] => buildTreeRows(roots, expanded, children);
+
     const clampSelected = (): void => {
-      const max = Math.max(0, entries.length - 1);
-      selected = Math.min(Math.max(0, selected), max);
+      const n = rows().length;
+      selected = n === 0 ? 0 : Math.min(Math.max(0, selected), n - 1);
     };
 
-    async function relist(): Promise<void> {
-      if (!root) {
-        entries = [];
-        clampSelected();
-        ctx.view.invalidate();
-        return;
-      }
+    async function loadDir(dir: string): Promise<void> {
       const token = ++listToken;
       let next: DirEntry[];
       try {
-        next = await ctx.fs.list(root);
+        next = await ctx.fs.list(dir);
       } catch {
-        // Error-isolated: a late fs:changed may fire after the directory is gone
-        // (e.g. removed by a test's cleanup). Never throw out of `void relist()`
-        // and never commit a partial/failed snapshot.
-        return;
+        // Gone or unreadable — treat as empty so the tree stays usable.
+        next = [];
       }
-      if (token !== listToken) return; // a newer re-list superseded us
-      entries = next;
+      if (token !== listToken) return;
+      children.set(dir, next);
+    }
+
+    /** Refresh every expanded directory so open branches stay current. */
+    async function refreshExpanded(): Promise<void> {
+      const dirs = [...expanded];
+      // Load sequentially under one token so a mid-flight refresh is superseded cleanly.
+      const token = ++listToken;
+      for (const dir of dirs) {
+        if (token !== listToken) return;
+        let next: DirEntry[];
+        try {
+          next = await ctx.fs.list(dir);
+        } catch {
+          next = [];
+        }
+        if (token !== listToken) return;
+        children.set(dir, next);
+      }
       clampSelected();
       ctx.view.invalidate();
     }
 
-    // Initial listing (await so the first frame already reflects the root).
-    await relist();
+    // Initial load: roots are expanded, so list each root's children.
+    await refreshExpanded();
 
-    // View provider for the 'tree' slot (contributed even when there are no roots).
     ctx.subscriptions.push(
-      ctx.view.contribute('tree', (): ViewModel => ({
-        kind: 'list',
-        items: entries.map((e) => ({ label: e.isDir ? e.name + '/' : e.name })),
-        selected,
-      })),
+      ctx.view.contribute('tree', (): ViewModel => {
+        const visible = rows();
+        return {
+          kind: 'list',
+          items: visible.map((r) => ({ label: formatTreeLabel(r, expanded) })),
+          selected,
+        };
+      }),
     );
 
-    // tree.up / tree.down: move selection, clamp, invalidate. No-op when empty.
     ctx.subscriptions.push(
       ctx.commands.register('tree.up', () => {
-        if (entries.length === 0) return;
+        if (rows().length === 0) return;
         selected = Math.max(0, selected - 1);
         ctx.view.invalidate();
       }, { title: 'Tree: Up' }),
-    );
-    ctx.subscriptions.push(
       ctx.commands.register('tree.down', () => {
-        if (entries.length === 0) return;
-        selected = Math.min(entries.length - 1, selected + 1);
+        const n = rows().length;
+        if (n === 0) return;
+        selected = Math.min(n - 1, selected + 1);
         ctx.view.invalidate();
       }, { title: 'Tree: Down' }),
-    );
-
-    // tree.open: open the selected file (dirs / empty are no-ops in M1), then
-    // focus the editor. Focus service is read lazily inside the handler (§F).
-    ctx.subscriptions.push(
       ctx.commands.register('tree.open', async () => {
-        if (!root) return;
-        const entry = entries[selected];
-        if (!entry || entry.isDir) return; // dir / empty -> ignore for M1
-        await ctx.workspace.openFile(join(root, entry.name));
-        ctx.services.get<FocusService>('focus').replace('editor');
-      }, { title: 'Tree: Open Selection' }),
-    );
+        const visible = rows();
+        const row = visible[selected];
+        if (!row) return;
 
-    // tree.focus: make the tree own input.
-    ctx.subscriptions.push(
+        if (!row.isDir) {
+          await ctx.workspace.openFile(row.path);
+          ctx.services.get<FocusService>('focus').replace('editor');
+          return;
+        }
+
+        // Toggle expand / collapse for directories.
+        if (expanded.has(row.path)) {
+          expanded.delete(row.path);
+          clampSelected();
+          ctx.view.invalidate();
+          return;
+        }
+
+        expanded.add(row.path);
+        await loadDir(row.path);
+        clampSelected();
+        ctx.view.invalidate();
+      }, { title: 'Tree: Open / Expand' }),
+      ctx.commands.register('tree.collapse', () => {
+        const visible = rows();
+        const row = visible[selected];
+        if (!row?.isDir || !expanded.has(row.path)) return;
+        expanded.delete(row.path);
+        clampSelected();
+        ctx.view.invalidate();
+      }, { title: 'Tree: Collapse' }),
+      ctx.commands.register('tree.expand', async () => {
+        const visible = rows();
+        const row = visible[selected];
+        if (!row?.isDir || expanded.has(row.path)) return;
+        expanded.add(row.path);
+        await loadDir(row.path);
+        clampSelected();
+        ctx.view.invalidate();
+      }, { title: 'Tree: Expand' }),
       ctx.commands.register('tree.focus', () => {
         ctx.services.get<FocusService>('focus').replace('tree');
       }, { title: 'Focus Directory Tree' }),
     );
 
-    // Keybindings (contract §D).
-    ctx.subscriptions.push(ctx.keys.bind('tree:up', 'tree.up'));
-    ctx.subscriptions.push(ctx.keys.bind('tree:down', 'tree.down'));
-    ctx.subscriptions.push(ctx.keys.bind('tree:enter', 'tree.open'));
-    ctx.subscriptions.push(ctx.keys.bind('global:alt+left', 'tree.focus'));
-
-    // Re-list on any fs change. M1: re-list the root regardless of which dir
-    // changed; relist()'s token guard handles concurrent/stale re-lists and its
-    // try/catch keeps the `void` call from producing an unhandled rejection.
     ctx.subscriptions.push(
-      ctx.events.on('fs:changed', () => { void relist(); }),
+      ctx.keys.bind('tree:up', 'tree.up'),
+      ctx.keys.bind('tree:down', 'tree.down'),
+      ctx.keys.bind('tree:enter', 'tree.open'),
+      ctx.keys.bind('tree:left', 'tree.collapse'),
+      ctx.keys.bind('tree:right', 'tree.expand'),
+      ctx.keys.bind('global:alt+left', 'tree.focus'),
+    );
+
+    // Re-list expanded branches on any workspace fs change.
+    ctx.subscriptions.push(
+      ctx.events.on('fs:changed', () => { void refreshExpanded(); }),
     );
   },
 };

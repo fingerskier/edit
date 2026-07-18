@@ -110,6 +110,43 @@ function paintStatus(screen: Screen, rect: Rect, widget: Extract<Widget, { kind:
   putText(screen, rect.x, rect.y, widget.segments.join('  '), rect.width, true);
 }
 
+// --- tab strip (multi-document chrome above the editor in the main column) ---
+function paintTabs(screen: Screen, rect: Rect, widget: Extract<Widget, { kind: 'tabs' }>): void {
+  if (rect.width <= 0 || rect.height <= 0) return;
+  fillRow(screen, rect, rect.y, false);
+
+  // Pack " label " cells left-to-right; when overflowing, shift so the active tab
+  // stays visible (simple scroll-to-active).
+  const cells: { text: string; active: boolean; width: number }[] = widget.items.map((item, i) => {
+    const text = ` ${item.label} `;
+    return { text, active: i === widget.activeIndex, width: [...text].length };
+  });
+  const total = cells.reduce((n, c) => n + c.width, 0);
+  let startX = rect.x;
+  if (total > rect.width && widget.activeIndex >= 0 && widget.activeIndex < cells.length) {
+    let before = 0;
+    for (let i = 0; i < widget.activeIndex; i++) before += cells[i].width;
+    const activeW = cells[widget.activeIndex].width;
+    // Prefer keeping the active tab fully in view from the left of the strip.
+    const maxShift = total - rect.width;
+    const shift = Math.min(maxShift, Math.max(0, before + activeW - rect.width));
+    startX = rect.x - shift;
+  }
+
+  let x = startX;
+  for (const cell of cells) {
+    // Clip by writing only columns that fall inside the rect.
+    const chars = [...cell.text];
+    for (let k = 0; k < chars.length; k++) {
+      const cx = x + k;
+      if (cx >= rect.x && cx < rect.x + rect.width) {
+        set(screen, cx, rect.y, chars[k], cell.active);
+      }
+    }
+    x += cell.width;
+  }
+}
+
 // --- bottom panel (output / problems / …): an inverse title row + a body below ---
 function paintPanel(screen: Screen, rect: Rect, widget: Extract<Widget, { kind: 'panel' }>): void {
   if (rect.width <= 0 || rect.height <= 0) return;
@@ -166,9 +203,13 @@ export function renderFrame(frame: Frame, layout: Layout): Screen {
 
   if (frame.tree && frame.tree.kind === 'list') paintList(screen, layout.tree, frame.tree);
 
-  // Vertical divider between tree and main.
+  // Vertical divider between tree and main (spans the full content column height).
   if (layout.dividerX >= 0) {
     for (let y = 0; y < layout.tree.height; y++) set(screen, layout.dividerX, y, '│', false);
+  }
+
+  if (frame.tabs && frame.tabs.kind === 'tabs' && layout.tabs.height > 0) {
+    paintTabs(screen, layout.tabs, frame.tabs);
   }
 
   if (frame.main && frame.main.kind === 'text') {

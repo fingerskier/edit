@@ -62,6 +62,34 @@ test('overlay: draws a bordered box with title, and suppresses the editor caret'
   assert.equal(s.cursor, null, 'caret hidden while the overlay is open');
 });
 
+test('tabs: paints labels in the main column; active tab is inverse', () => {
+  const layout = computeLayout(80, 24, { tabsHeight: 1 });
+  const frame: Frame = {
+    tabs: {
+      kind: 'tabs',
+      items: [
+        { id: '1', label: 'a.txt' },
+        { id: '2', label: 'b.txt' },
+      ],
+      activeIndex: 1,
+    },
+    main: { kind: 'text', lines: ['body'], cursors: [0] },
+  };
+  const s = renderFrame(frame, layout);
+  assert.ok(row(s, layout.tabs.y).includes('a.txt'));
+  assert.ok(row(s, layout.tabs.y).includes('b.txt'));
+  // Active tab cells are inverse; first tab is not.
+  // " a.txt " then " b.txt " — find a char of b.txt that is inverse.
+  const tabRow = s.cells[layout.tabs.y];
+  const bIdx = row(s, layout.tabs.y).indexOf('b.txt');
+  assert.ok(bIdx >= 0);
+  assert.equal(tabRow[bIdx].inverse, true);
+  const aIdx = row(s, layout.tabs.y).indexOf('a.txt');
+  assert.equal(tabRow[aIdx].inverse, false);
+  // Editor body starts on the main rect, not on the tab row.
+  assert.ok(row(s, layout.main.y).includes('body'));
+});
+
 test('panel: draws a titled bar above the status row with its body below', () => {
   const layout = computeLayout(80, 24, { panelHeight: 5 });
   const frame: Frame = {

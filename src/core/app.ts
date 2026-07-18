@@ -20,6 +20,7 @@ export interface App {
   workspace: Workspace;
   commands: CommandRegistry;
   keys: KeybindingRegistry;
+  services: ServiceRegistry;
   render(): void;
   dispose(): Promise<void>;
 }
@@ -86,6 +87,7 @@ export async function createApp(options: AppOptions): Promise<App> {
     workspace,
     commands,
     keys,
+    services,
     render,
     async dispose() {
       await host.deactivateAll();

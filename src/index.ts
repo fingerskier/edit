@@ -13,7 +13,7 @@ export {
 export {
   ViewRegistry, ViewComposer,
   type Slot, type Widget, type ViewModel, type Frame, type ViewProvider,
-  type ListItem, type StyleSpan, type ContributeOptions,
+  type ListItem, type StyleSpan, type TabItem, type ContributeOptions,
 } from './core/view.js';
 export {
   StatusBarRegistry, type StatusBarApi, type StatusBarItem,

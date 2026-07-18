@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// `edit` CLI entrypoint. The pure parts (parseArgs / resolveRoots / loadConfig) are
-// exported and unit-tested; main() wires the TUI adapter + core + default plugins to
-// the real terminal and is smoke-tested manually. Process side effects (exit, signal
-// handlers, terminal raw mode) run only when this file is executed as a script.
+// `edit` CLI entrypoint. The pure parts (parseArgs / resolveRoots / loadConfig /
+// assemblePlugins) are exported and unit-tested; main() wires the TUI adapter +
+// core + plugins to the real terminal and is smoke-tested manually. Process side
+// effects (exit, signal handlers, terminal raw mode) run only when this file is
+// executed as a script.
 
 import { stat, readFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
@@ -10,11 +11,17 @@ import { resolve, dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './core/app.js';
+import { resolvePlugins } from './core/plugin-loader.js';
+import type { Plugin } from './core/plugin-host.js';
 import { defaultPlugins } from './plugins/index.js';
+import type { QuickInputService } from './plugins/quick-input.js';
+import { confirmDiscardDirty } from './plugins/dirty-confirm.js';
 import { TuiAdapter } from './adapters/tui/tui-adapter.js';
 import { Terminal } from './adapters/tui/terminal.js';
 
-export type Config = Record<string, Record<string, unknown>>;
+/** Top-level config object. Per-plugin slices live under the plugin name key;
+ *  the reserved `plugins` key controls load/disable of extension plugins. */
+export type Config = Record<string, any>;
 
 export interface ParsedArgs {
   paths: string[];
@@ -135,6 +142,46 @@ export async function loadConfig(opts: { home: string; explicitPath?: string }):
   }
 }
 
+/** npm package names / absolute module paths listed under config.plugins.load. */
+export function pluginLoadSpecifiers(config: Config): string[] {
+  const load = config?.plugins?.load;
+  if (!Array.isArray(load)) return [];
+  return load.filter((x: unknown): x is string => typeof x === 'string' && x.length > 0);
+}
+
+/** Default-plugin names to skip (config.plugins.disable). */
+export function pluginDisableNames(config: Config): string[] {
+  const disable = config?.plugins?.disable;
+  if (!Array.isArray(disable)) return [];
+  return disable.filter((x: unknown): x is string => typeof x === 'string' && x.length > 0);
+}
+
+/**
+ * Merge built-in defaults with user plugins. Defaults load first (keymap/quick-input
+ * order preserved); disabled defaults are filtered by name; user plugins append.
+ */
+export function assemblePlugins(defaults: Plugin[], user: Plugin[], disable: string[] = []): Plugin[] {
+  const skip = new Set(disable);
+  return [...defaults.filter((p) => !skip.has(p.name)), ...user];
+}
+
+/**
+ * Load extension plugins from config.plugins.load + loose files in ~/.edit/plugins
+ * (or an override dir). Throws on a bad module so the CLI can exit 2.
+ */
+export async function loadUserPlugins(opts: {
+  config: Config;
+  home: string;
+  /** Override the local plugins directory (tests). Default: `~/.edit/plugins`. */
+  localDir?: string;
+}): Promise<Plugin[]> {
+  const localDir = opts.localDir ?? join(opts.home, '.edit', 'plugins');
+  return resolvePlugins({
+    specifiers: pluginLoadSpecifiers(opts.config),
+    localDir,
+  });
+}
+
 function readVersion(): string {
   try {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
@@ -150,12 +197,16 @@ export async function main(argv: string[]): Promise<void> {
   if (args.help) { process.stdout.write(`${usage()}\n`); process.exit(0); }
   if (args.version) { process.stdout.write(`${readVersion()}\n`); process.exit(0); }
 
+  const home = homedir();
   let roots: string[];
   let files: string[];
   let config: Config;
+  let plugins: Plugin[];
   try {
     ({ roots, files } = await resolveRoots(args.paths, process.cwd()));
-    config = await loadConfig({ home: homedir(), explicitPath: args.configPath });
+    config = await loadConfig({ home, explicitPath: args.configPath });
+    const user = await loadUserPlugins({ config, home });
+    plugins = assemblePlugins(defaultPlugins(), user, pluginDisableNames(config));
   } catch (err) {
     process.stderr.write(`edit: ${(err as Error).message}\n`);
     process.exit(2);
@@ -164,7 +215,7 @@ export async function main(argv: string[]): Promise<void> {
 
   const term = new Terminal();
   const adapter = new TuiAdapter(term);
-  const app = await createApp({ adapter, plugins: defaultPlugins(), roots, config });
+  const app = await createApp({ adapter, plugins, roots, config });
 
   // Open any files passed on the command line (best-effort; the editor has focus by default).
   for (const f of files) {
@@ -173,6 +224,7 @@ export async function main(argv: string[]): Promise<void> {
 
   // Quit path: a command + binding the keymap can resolve, plus OS signals. Disposing
   // the app tears down plugins, the watcher, and the adapter (which restores the TTY).
+  // Ctrl+Q prompts when there are dirty buffers; SIGINT/SIGTERM force-quit.
   let quitting = false;
   const shutdown = async (code: number): Promise<void> => {
     if (quitting) return;
@@ -184,7 +236,20 @@ export async function main(argv: string[]): Promise<void> {
     }
     process.exit(code);
   };
-  app.commands.register('app.quit', () => shutdown(0), { title: 'Quit' });
+  app.commands.register('app.quit', async () => {
+    const dirty = app.workspace.list().filter((d) => d.dirty);
+    if (dirty.length > 0) {
+      try {
+        const qi = app.services.get<QuickInputService>('quickInput');
+        const ok = await confirmDiscardDirty(qi.pick.bind(qi), dirty, 'Quit with unsaved changes?');
+        if (!ok) return;
+      } catch {
+        // quickInput unavailable (e.g. disabled) — refuse to discard silently.
+        return;
+      }
+    }
+    await shutdown(0);
+  }, { title: 'Quit' });
   app.keys.bind('global:ctrl+q', 'app.quit');
   process.on('SIGINT', () => { void shutdown(0); });
   process.on('SIGTERM', () => { void shutdown(0); });

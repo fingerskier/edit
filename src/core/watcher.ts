@@ -7,7 +7,9 @@ export class Watcher {
 
   watch(dir: string): void {
     if (this.watchers.has(dir)) return;
-    const w = watch(dir, (eventType, filename) => {
+    // Recursive so nested tree expansions still refresh when deep files change
+    // (supported on macOS/Windows; Linux since recent Node — best-effort).
+    const w = watch(dir, { recursive: true }, (eventType, filename) => {
       this.bus.emit('fs:changed', {
         dir,
         filename: filename === null ? null : filename.toString(),

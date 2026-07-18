@@ -1,10 +1,10 @@
 // Pure screen geometry: given the terminal size, compute the rectangle each slot
 // occupies. No painting, no I/O — fully unit-testable.
 //
-// Layout (per spec §5.1, with an optional bottom panel):
+// Layout (per spec §5.1, with an optional bottom panel and optional tab strip):
 //   ┌──────────┬─────────────────────────┐
-//   │  tree    │  main (editor)          │   } content rows
-//   │          │                         │
+//   │  tree    │  tabs (optional, 1 row) │   } content rows
+//   │          │  main (editor)          │
 //   ├──────────┴─────────────────────────┤
 //   │ panel (output / problems / …)       │   } panelHeight rows (0 = hidden)
 //   ├─────────────────────────────────────┤
@@ -12,7 +12,8 @@
 //   └─────────────────────────────────────┘
 // The tree is a fixed-width left column with a 1-col vertical divider; the panel is
 // a full-width region above the status bar (shown only when something contributes
-// to the `panel` slot); the command palette is a centered overlay drawn on top.
+// to the `panel` slot); the tab strip sits only in the main column (not over the
+// tree); the command palette is a centered overlay drawn on top.
 
 export interface Rect { x: number; y: number; width: number; height: number }
 
@@ -22,6 +23,8 @@ export interface Layout {
   tree: Rect;
   /** x of the 1-col vertical divider between tree and main; -1 when there is no room. */
   dividerX: number;
+  /** Tab strip above the editor within the main column; height 0 when hidden. */
+  tabs: Rect;
   main: Rect;
   /** Full-width bottom panel above the status bar; height 0 when hidden. */
   panel: Rect;
@@ -33,6 +36,8 @@ export interface Layout {
 export interface LayoutOptions {
   /** Rows reserved for the bottom panel (clamped to the space above the status bar). 0 hides it. */
   panelHeight?: number;
+  /** Rows reserved for the tab strip at the top of the main column. 0 hides it. */
+  tabsHeight?: number;
 }
 
 const TREE_RATIO = 0.25;
@@ -63,7 +68,11 @@ export function computeLayout(cols: number, rows: number, opts: LayoutOptions = 
   const tree: Rect = { x: 0, y: 0, width: treeW, height: contentH };
   const dividerX = treeW > 0 && treeW < c - 1 ? treeW : -1;
   const mainX = dividerX >= 0 ? dividerX + 1 : treeW;
-  const main: Rect = { x: mainX, y: 0, width: Math.max(0, c - mainX), height: contentH };
+  const mainW = Math.max(0, c - mainX);
+  // Tabs sit only in the main column; tree keeps the full content height.
+  const tabsH = clamp(Math.floor(opts.tabsHeight ?? 0), 0, contentH);
+  const tabs: Rect = { x: mainX, y: 0, width: mainW, height: tabsH };
+  const main: Rect = { x: mainX, y: tabsH, width: mainW, height: contentH - tabsH };
 
   // Overlay: centered in the area above the status bar, ~70% wide / ~60% tall.
   const ovW = clamp(Math.round(c * 0.7), Math.min(20, c), Math.min(72, c));
@@ -75,5 +84,5 @@ export function computeLayout(cols: number, rows: number, opts: LayoutOptions = 
     height: ovH,
   };
 
-  return { cols: c, rows: r, tree, dividerX, main, panel, status, overlay };
+  return { cols: c, rows: r, tree, dividerX, tabs, main, panel, status, overlay };
 }

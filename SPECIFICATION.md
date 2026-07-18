@@ -61,7 +61,7 @@ the composed frame to the active adapter. Full details in the design spec above.
 - `ctx.commands` — register/run command ids (with `internal` to hide UI commands).
 - `ctx.keys` — bind `"<context>:<key>"` → command id.
 - `ctx.view.contribute(slot, provider, { priority })` — multi-contributor slots
-  (`tree`, `main`, `status`, `panel`, `overlay`).
+  (`tree`, `main`, `tabs`, `status`, `panel`, `overlay`).
 - `ctx.statusBar.createItem(...)` — independent, composited status-bar items.
 - `ctx.events` — pub/sub of past-tense facts.
 - `ctx.workspace` / `ctx.fs` — documents, edits, file I/O, watcher.
@@ -69,7 +69,8 @@ the composed frame to the active adapter. Full details in the design spec above.
 
 ## 3. Distribution and runtime
 
-- Published to npm as `edit`; `bin` exposes the `edit` command; runs under `npx`.
+- Published to npm as `@fingerskier/edit`; `bin` exposes the `edit` command;
+  runs under `npx @fingerskier/edit`.
 - **Node ≥20, TypeScript, ESM.** A Terminal UI adapter ships first.
 - Plugins are npm packages listed in config **plus** loose `.mjs`/`.js` files in
   `~/.edit/plugins/`. (A declarative manifest + lazy activation + an
@@ -119,15 +120,15 @@ The phased plan (supersedes `M0–M5`) lives in [`TODO.md`](./TODO.md). In short
 - **M1 Usable editor** — TUI + default plugins (single-pane edit, tree, palette,
   undo/redo, save, watch). ✅
 - **P1 Workbench foundations** — multi-contributor slots ✅, status-bar items ✅,
-  bottom panel ✅, editor tabs (next).
-- **P2 Extension platform** — fuzzy `quickInput` ✅; then `TreeDataProvider`,
-  decorations API, settings/config schema, plugin manifest + lazy activation,
-  menu contributions.
+  bottom panel ✅, editor tabs ✅.
+- **P2 Extension platform** — fuzzy `quickInput` ✅; CLI external plugin load ✅;
+  then `TreeDataProvider`, decorations API, settings/config schema, plugin
+  manifest + lazy activation, menu contributions.
 - **P3 Distribution** — install/enable/disable/update UX; manifest-based;
   workspace recommendations.
-- **P4 Flagship plugins** — fuzzy-open, nested multi-root tree, syntax
-  highlighting, LSP, themes, git, search, integrated terminal, multi-cursor,
-  clipboard-history.
+- **P4 Flagship plugins** — fuzzy-open ✅, dirty guards ✅, nested multi-root
+  tree ✅; syntax highlighting, LSP, themes, git, search, integrated terminal,
+  multi-cursor, clipboard-history.
 - **P5 Hardening** — perf under decorations/large files, the async key-dispatch
   race, cross-platform keys, CI matrix, a public `edit` API types package.
 
@@ -158,8 +159,9 @@ normalization layer, and a watcher backend per platform; CI matrix in P5.
 
 ## 11. Acceptance criteria (v1)
 
-`npx edit` works on macOS/Linux/Windows without manual build steps; single-pane
-editing is smooth with undo/redo; the tree is always visible and navigable;
-auto-save and file-watching are reliable; the command palette and customizable
-keybindings work; and the plugin API is stable enough that a third party can
-ship a feature (e.g. syntax highlighting or LSP) as an external plugin.
+`npx @fingerskier/edit` works on macOS/Linux/Windows without manual build steps;
+single-pane editing is smooth with undo/redo; the nested multi-root tree is
+always visible and navigable; auto-save and file-watching are reliable; the
+command palette and customizable keybindings work; and the plugin API is stable
+enough that a third party can ship a feature (e.g. syntax highlighting or LSP)
+as an external plugin.

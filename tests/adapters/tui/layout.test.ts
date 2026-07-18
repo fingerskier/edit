@@ -7,6 +7,7 @@ test('status bar is the full-width bottom row; content sits above it', () => {
   assert.deepEqual(l.status, { x: 0, y: 23, width: 80, height: 1 });
   assert.equal(l.tree.height, 23);
   assert.equal(l.main.height, 23);
+  assert.equal(l.tabs.height, 0);
 });
 
 test('tree is a left column, divider after it, main fills the rest', () => {
@@ -62,4 +63,24 @@ test('overlay is centered within the content area', () => {
   assert.ok(l.overlay.width <= 80 && l.overlay.height <= 23);
   assert.equal(l.overlay.x, Math.floor((80 - l.overlay.width) / 2));
   assert.equal(l.overlay.y, Math.floor((23 - l.overlay.height) / 2));
+});
+
+test('tabs strip sits in the main column only; tree keeps full content height', () => {
+  const l = computeLayout(80, 24, { tabsHeight: 1 });
+  assert.equal(l.tabs.height, 1);
+  assert.equal(l.tabs.y, 0);
+  assert.equal(l.tabs.x, l.main.x);
+  assert.equal(l.tabs.width, l.main.width);
+  assert.equal(l.main.y, 1);
+  assert.equal(l.main.height, 22); // content 23 minus 1 tab row
+  assert.equal(l.tree.height, 23); // tree not shortened by tabs
+});
+
+test('tabs + panel both reserve space without overlapping', () => {
+  const l = computeLayout(80, 24, { tabsHeight: 1, panelHeight: 5 });
+  assert.equal(l.panel.height, 5);
+  assert.equal(l.tabs.height, 1);
+  assert.equal(l.main.y, 1);
+  assert.equal(l.main.height, 17); // 23 content - 5 panel - 1 tabs, wait: contentH = 23-5=18, main = 18-1=17
+  assert.equal(l.tree.height, 18);
 });
