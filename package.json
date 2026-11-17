@@ -1,20 +1,35 @@
 {
   "name": "@fingerskier/edit",
-  "version": "2026.5.5",
-  "description": "Lightning-fast cross-platform CLI text editor — VS Code's extensibility model for the terminal",
+  "version": "2026.11.17",
+  "description": "Fedit — a lightweight, pluggable desktop text editor with VS Code keybindings",
   "type": "module",
   "bin": {
-    "edit": "dist/cli.js"
+    "fedit": "bin/fedit.mjs"
   },
   "files": [
-    "dist"
+    "bin",
+    "lib",
+    "assets",
+    "dist",
+    "docs",
+    "examples",
+    "src-tauri/Cargo.toml",
+    "src-tauri/Cargo.lock",
+    "src-tauri/build.rs",
+    "src-tauri/tauri.conf.json",
+    "src-tauri/capabilities",
+    "src-tauri/icons",
+    "src-tauri/src"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "start": "node dist/cli.js",
-    "dev": "tsx src/cli.ts",
+    "dev": "tauri dev",
+    "dev:ui": "vite",
+    "build:ui": "tsc --noEmit -p tsconfig.json && vite build",
+    "build": "tauri build --no-bundle",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
-    "prepublishOnly": "npm test && npm run build"
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:e2e": "playwright test",
+    "prepublishOnly": "npm test && npm run build:ui"
   },
   "engines": {
     "node": ">=20"
@@ -33,16 +48,28 @@
   "author": "Matt Currier",
   "keywords": [
     "editor",
-    "cli",
-    "tui",
-    "terminal",
     "text-editor",
+    "desktop",
+    "tauri",
+    "codemirror",
     "plugins"
   ],
   "license": "MIT",
   "devDependencies": {
+    "@codemirror/commands": "^6.0.0",
+    "@codemirror/language": "^6.0.0",
+    "@codemirror/language-data": "^6.5.2",
+    "@codemirror/search": "^6.0.0",
+    "@codemirror/state": "^6.0.0",
+    "@codemirror/autocomplete": "^6.0.0",
+    "@codemirror/theme-one-dark": "^6.1.3",
+    "@codemirror/view": "^6.0.0",
+    "@playwright/test": "^1.65.1",
+    "@tauri-apps/api": "^2.12.5",
+    "@tauri-apps/cli": "^2.12.5",
     "@types/node": "^22.15.19",
     "tsx": "^4.19.3",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vite": "^8.3.8"
   }
 }

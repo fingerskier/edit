@@ -141,3 +141,9 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Fedit
+src-tauri/target
+src-tauri/gen
+test-results
+playwright-report
