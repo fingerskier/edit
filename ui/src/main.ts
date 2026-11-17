@@ -559,7 +559,6 @@ async function boot(): Promise<void> {
   backend.on('open-paths', (paths: string[]) => void openMany(paths));
   backend.on('close-requested', () => void requestQuit());
   backend.onDrop((paths) => void openMany(paths));
-  backend.ready();
 
   // The webview's own context menu offers "Reload", which would discard
   // unsaved work, so the editor gets a menu of its own and the rest get none.
@@ -638,6 +637,7 @@ async function boot(): Promise<void> {
   for (const s of cliStats) if (s.kind !== 'dir') await app.openPath(s.path);
 
   booted = true;
+  void backend.ready().then(openMany);
   explorer.render();
   wb.refreshChrome();
   app.syncWatches();

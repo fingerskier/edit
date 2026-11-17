@@ -189,8 +189,9 @@ export function createMockBackend(): Backend {
     },
     clipboardRead: async () => mock.clipboard,
     clipboardWrite: async (text) => void (mock.clipboard = text),
-    ready: () => {
+    ready: async () => {
       mock.ready = true;
+      return [];
     },
     quit: () => {
       mock.quit = true;

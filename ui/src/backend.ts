@@ -63,8 +63,11 @@ export interface Backend {
   setTitle(title: string): void;
   clipboardRead(): Promise<string>;
   clipboardWrite(text: string): Promise<void>;
-  /** Tell the host the UI now handles window-close requests itself. */
-  ready(): void;
+  /**
+   * Tell the host the UI is listening: it now handles window-close requests
+   * itself. Resolves any paths the OS asked to open while the UI was starting.
+   */
+  ready(): Promise<string[]>;
   quit(): void;
   on(event: BackendEvent, handler: (payload: any) => void): void;
   /** Files dropped onto the window. */
@@ -96,7 +99,7 @@ async function createTauriBackend(): Promise<Backend> {
     setTitle: (title) => void invoke('set_title', { title }),
     clipboardRead: () => invoke('clipboard_read'),
     clipboardWrite: (text) => invoke('clipboard_write', { text }),
-    ready: () => void invoke('frontend_ready'),
+    ready: () => invoke('frontend_ready'),
     quit: () => void invoke('quit'),
     on: (event, handler) => void listen(event, (e) => handler(e.payload)),
     onDrop: (handler) =>

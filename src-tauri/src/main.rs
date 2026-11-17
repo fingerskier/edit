@@ -22,8 +22,10 @@ struct Watching {
 
 struct AppState {
     watching: Mutex<Watching>,
-    /// Paths given on the command line of the first instance.
-    initial_paths: Vec<String>,
+    /// Paths to open that the UI has not been told about yet: the command
+    /// line of the first instance, plus files the OS asked us to open before
+    /// the UI was listening.
+    pending_paths: Mutex<Vec<String>>,
     /// Set once the UI is listening for `close-requested`. Until then the
     /// window closes normally, so a UI that failed to start can still be shut.
     frontend_ready: AtomicBool,
@@ -48,7 +50,7 @@ fn app_info(app: AppHandle, state: State<AppState>) -> AppInfo {
         platform: std::env::consts::OS,
         sep: std::path::MAIN_SEPARATOR.to_string(),
         home: std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default(),
-        paths: state.initial_paths.clone(),
+        paths: std::mem::take(&mut *state.pending_paths.lock().unwrap()),
     }
 }
 
@@ -181,9 +183,24 @@ fn set_title(app: AppHandle, title: String) {
     }
 }
 
+/// The UI is listening. Returns any paths that arrived since `app_info`.
 #[tauri::command]
-fn frontend_ready(state: State<AppState>) {
+fn frontend_ready(state: State<AppState>) -> Vec<String> {
+    let mut pending = state.pending_paths.lock().unwrap();
     state.frontend_ready.store(true, Ordering::SeqCst);
+    std::mem::take(&mut *pending)
+}
+
+/// Hand paths to the UI now, or keep them until it is ready.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn deliver_paths(app: &AppHandle, paths: Vec<String>) {
+    let state = app.state::<AppState>();
+    let mut pending = state.pending_paths.lock().unwrap();
+    if state.frontend_ready.load(Ordering::SeqCst) {
+        let _ = app.emit("open-paths", paths);
+    } else {
+        pending.extend(paths);
+    }
 }
 
 #[tauri::command]
@@ -227,7 +244,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
             watching: Mutex::new(Watching::default()),
-            initial_paths,
+            pending_paths: Mutex::new(initial_paths),
             frontend_ready: AtomicBool::new(false),
         })
         .setup(|app| {
@@ -280,6 +297,19 @@ fn main() {
             clipboard_write,
             quit
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running fedit");
+        .build(tauri::generate_context!())
+        .expect("error while building fedit")
+        .run(|_app, _event| {
+            // macOS delivers "open with" and file drops on the dock icon as an
+            // event rather than as command-line arguments.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = _event {
+                let paths = urls
+                    .iter()
+                    .filter_map(|u| u.to_file_path().ok())
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect();
+                deliver_paths(_app, paths);
+            }
+        });
 }
