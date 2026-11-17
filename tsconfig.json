@@ -1,13 +1,14 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "outDir": "dist",
-    "rootDir": "src",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "strict": true,
     "skipLibCheck": true,
-    "esModuleInterop": true
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "types": ["vite/client"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["ui/src/**/*.ts"]
 }

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fedit</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="body">
+        <aside id="sidebar" aria-label="Explorer">
+          <div id="sidebar-title"></div>
+          <div id="tree" tabindex="0" role="tree"></div>
+        </aside>
+        <div id="sash" role="separator" aria-orientation="vertical"></div>
+        <main id="main">
+          <div id="tabs" role="tablist"></div>
+          <div id="editor"></div>
+          <div id="welcome"></div>
+        </main>
+      </div>
+      <footer id="status">
+        <div id="status-left"></div>
+        <div id="status-right"></div>
+      </footer>
+    </div>
+    <div id="palette" hidden>
+      <input id="palette-input" type="text" spellcheck="false" autocomplete="off" />
+      <div id="palette-list" role="listbox"></div>
+    </div>
+    <div id="toasts" aria-live="polite"></div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
