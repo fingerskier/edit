@@ -192,7 +192,6 @@ fn frontend_ready(state: State<AppState>) -> Vec<String> {
 }
 
 /// Hand paths to the UI now, or keep them until it is ready.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn deliver_paths(app: &AppHandle, paths: Vec<String>) {
     let state = app.state::<AppState>();
     let mut pending = state.pending_paths.lock().unwrap();
@@ -229,8 +228,8 @@ fn main() {
     if std::env::var_os("FEDIT_NEW_INSTANCE").is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             let rest: Vec<String> = argv.into_iter().skip(1).collect();
-            let paths = fsops::resolve_args(&rest, Path::new(&cwd));
-            let _ = app.emit("open-paths", paths);
+            // Queued if the first window is still starting up.
+            deliver_paths(app, fsops::resolve_args(&rest, Path::new(&cwd)));
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.unminimize();
                 let _ = w.set_focus();
@@ -299,17 +298,27 @@ fn main() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building fedit")
-        .run(|_app, _event| {
+        .run(|app, event| match event {
+            // A quit that did not come from our own `quit` command (the macOS
+            // app menu or Dock, for instance) goes through the same
+            // unsaved-changes prompt as closing the window.
+            tauri::RunEvent::ExitRequested { api, code: None, .. } => {
+                if app.state::<AppState>().frontend_ready.load(Ordering::SeqCst) {
+                    api.prevent_exit();
+                    let _ = app.emit("close-requested", ());
+                }
+            }
             // macOS delivers "open with" and file drops on the dock icon as an
             // event rather than as command-line arguments.
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Opened { urls } = _event {
+            tauri::RunEvent::Opened { urls } => {
                 let paths = urls
                     .iter()
                     .filter_map(|u| u.to_file_path().ok())
                     .map(|p| p.to_string_lossy().into_owned())
                     .collect();
-                deliver_paths(_app, paths);
+                deliver_paths(app, paths);
             }
+            _ => {}
         });
 }

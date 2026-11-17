@@ -28,6 +28,8 @@ export class Explorer {
   private editing: Editing | null = null;
   private refreshTimer: number | undefined;
   private pendingDirs = new Set<string>();
+  /** Bumped whenever the folder changes, so late results for the old one are dropped. */
+  private generation = 0;
   private el = document.getElementById('tree')!;
   private titleEl = document.getElementById('sidebar-title')!;
 
@@ -69,6 +71,8 @@ export class Explorer {
   }
 
   async setRoot(path: string | null, expanded: string[] = []): Promise<void> {
+    const generation = ++this.generation;
+    this.pendingDirs.clear();
     this.root = path;
     this.children.clear();
     this.expanded.clear();
@@ -78,6 +82,7 @@ export class Explorer {
       for (const dir of expanded) if (isWithin(dir, path)) this.expanded.add(dir);
       await this.load(path);
       await Promise.all([...this.expanded].map((dir) => this.load(dir)));
+      if (generation !== this.generation) return; // another folder was opened meanwhile
     }
     this.app.context.set('workspaceFolderCount', path ? 1 : 0);
     this.render();
@@ -87,12 +92,17 @@ export class Explorer {
     this.app.workbench.refreshChrome();
   }
 
+  /** Read one directory into the cache. A result for a folder since replaced is discarded. */
   private async load(dir: string): Promise<boolean> {
+    const generation = this.generation;
     try {
       const exclude = new Set(this.app.settings['files.exclude']);
-      this.children.set(dir, (await this.app.backend.readDir(dir)).filter((e) => !exclude.has(e.name)));
+      const entries = (await this.app.backend.readDir(dir)).filter((e) => !exclude.has(e.name));
+      if (generation !== this.generation) return false;
+      this.children.set(dir, entries);
       return true;
     } catch {
+      if (generation !== this.generation) return false;
       this.children.delete(dir);
       this.expanded.delete(dir);
       return false;
@@ -102,12 +112,17 @@ export class Explorer {
   /** Reload every loaded directory (after a settings change, or on demand). */
   async refresh(): Promise<void> {
     if (!this.root) return;
-    if (!(await this.load(this.root))) {
-      toast(`${this.root} is no longer available.`, 'warn');
+    const generation = this.generation;
+    const root = this.root;
+    const loaded = await this.load(root);
+    if (generation !== this.generation) return;
+    if (!loaded) {
+      toast(`${root} is no longer available.`, 'warn');
       await this.setRoot(null);
       return;
     }
     await Promise.all([...this.expanded].map((dir) => this.load(dir)));
+    if (generation !== this.generation) return;
     this.render();
     this.app.syncWatches();
   }
@@ -121,9 +136,11 @@ export class Explorer {
     if (this.pendingDirs.size === 0) return;
     clearTimeout(this.refreshTimer);
     this.refreshTimer = window.setTimeout(async () => {
+      const generation = this.generation;
       const dirs = [...this.pendingDirs];
       this.pendingDirs.clear();
       await Promise.all(dirs.map((dir) => this.load(dir)));
+      if (generation !== this.generation) return;
       if (this.root && !this.children.has(this.root)) return void this.refresh();
       if (!this.editing) this.render();
       this.app.syncWatches();
@@ -132,8 +149,11 @@ export class Explorer {
 
   async toggle(dir: string, open?: boolean): Promise<void> {
     const want = open ?? !this.expanded.has(dir);
+    const generation = this.generation;
     if (want) {
-      if (!(await this.load(dir))) toast(`Cannot read ${basename(dir)}.`, 'error');
+      const loaded = await this.load(dir);
+      if (generation !== this.generation) return;
+      if (!loaded) toast(`Cannot read ${basename(dir)}.`, 'error');
       else this.expanded.add(dir);
     } else {
       this.expanded.delete(dir);
@@ -151,9 +171,12 @@ export class Explorer {
     }
     const chain: string[] = [];
     for (let dir = dirname(path); isWithin(dir, this.root) && dir !== this.root; dir = dirname(dir)) chain.unshift(dir);
+    const generation = this.generation;
     for (const dir of chain) {
       if (!this.expanded.has(dir)) {
-        if (!(await this.load(dir))) break;
+        const loaded = await this.load(dir);
+        if (generation !== this.generation) return;
+        if (!loaded) break;
         this.expanded.add(dir);
       }
     }

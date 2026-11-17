@@ -10,6 +10,8 @@ import { assetName, cachedBinary, configDir, parseArgs, releaseUrl } from '../li
 import { desktopEntry, infoPlist, installLauncher, launcherPaths, removeLauncher } from '../lib/desktop.mjs';
 // @ts-ignore
 import { findBinary } from '../lib/binary.mjs';
+// @ts-ignore
+import { quoteForCmd } from '../lib/proc.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const fedit = path.join(root, 'bin', 'fedit.mjs');
@@ -35,9 +37,10 @@ test('release assets are named per platform', () => {
 });
 
 test('arguments split into flags and absolute paths', () => {
-  const { flags, paths } = parseArgs(['--verbose', 'a.txt', '/abs/b', '--', '-dash.txt'], '/cwd');
+  const cwd = path.resolve('/cwd');
+  const { flags, paths } = parseArgs(['--verbose', 'a.txt', path.resolve('/abs/b'), '--', '-dash.txt'], cwd);
   assert.deepEqual([...flags], ['--verbose']);
-  assert.deepEqual(paths, ['/cwd/a.txt', '/abs/b', '/cwd/-dash.txt']);
+  assert.deepEqual(paths, [path.join(cwd, 'a.txt'), path.resolve('/abs/b'), path.join(cwd, '-dash.txt')]);
 });
 
 test('desktop entry quotes the binary and passes files', () => {
@@ -58,6 +61,35 @@ test('linux launcher installs and removes cleanly', () => {
   assert.equal(removeLauncher('linux', env, home).length, 3);
   assert.equal(fs.existsSync(entry), false);
   assert.deepEqual(removeLauncher('linux', env, home), []);
+});
+
+test('windows shell arguments keep paths with spaces in one piece', () => {
+  assert.equal(quoteForCmd('install'), 'install');
+  assert.equal(quoteForCmd('C:\\Users\\Jane Doe\\fedit'), '"C:\\Users\\Jane Doe\\fedit"');
+  assert.equal(quoteForCmd('a"b'), '"a""b"');
+  assert.equal(quoteForCmd('x&y'), '"x&y"');
+  assert.equal(quoteForCmd(''), '""');
+});
+
+test('an upgraded binary refreshes an existing launcher', { skip: process.platform !== 'linux' }, () => {
+  const home = tmp();
+  const env = { ...process.env, FEDIT_HOME: home, XDG_DATA_HOME: path.join(home, 'share') };
+  const entry = path.join(home, 'share', 'applications', 'fedit.desktop');
+  const fake = path.join(home, 'fedit-new');
+  fs.writeFileSync(fake, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  const run = () => spawnSync(process.execPath, [fedit, 'x.txt'], { encoding: 'utf8', env: { ...env, FEDIT_BINARY: fake } });
+
+  // No launcher installed: running the editor does not create one.
+  assert.equal(run().status, 0);
+  assert.equal(fs.existsSync(entry), false);
+
+  // A launcher left by an older version is repointed at the current binary.
+  installLauncher({ binary: '/old/fedit', version: '0.0.1', pkgRoot: root, platform: 'linux', env, home });
+  assert.equal(run().status, 0);
+  assert.match(fs.readFileSync(entry, 'utf8'), new RegExp(`Exec="${fake}" %F`));
+  const stamp = fs.statSync(path.join(home, 'launcher.json')).mtimeMs;
+  assert.equal(run().status, 0);
+  assert.equal(fs.statSync(path.join(home, 'launcher.json')).mtimeMs, stamp, 'an up-to-date launcher is left alone');
 });
 
 test('binary lookup: override, then cache', () => {

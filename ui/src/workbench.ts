@@ -157,7 +157,14 @@ export class Workbench {
         search({ top: true }),
         // Only the editing basics live in CodeMirror's keymap; every other
         // shortcut goes through the configurable keybinding rules.
-        keymap.of([...closeBracketsKeymap, ...standardKeymap, ...searchKeymap, { key: 'Tab', run: insertTab, shift: indentLess }]),
+        // From the search keymap only Escape (close the panel) is kept, so
+        // removing a binding such as Ctrl+F really removes it.
+        keymap.of([
+          ...closeBracketsKeymap,
+          ...standardKeymap,
+          ...searchKeymap.filter((binding) => binding.key === 'Escape'),
+          { key: 'Tab', run: insertTab, shift: indentLess },
+        ]),
         readOnlyC.of(EditorState.readOnly.of(readOnly)),
         indentC.of(this.indentExtension(indent)),
         wrapC.of(s['editor.wordWrap'] === 'on' ? EditorView.lineWrapping : []),
@@ -181,6 +188,25 @@ export class Workbench {
 
   private stateOf(tab: Tab): EditorState {
     return tab === this.active ? this.view.state : tab.state;
+  }
+
+  /**
+   * One spelling per file: Windows paths are case-insensitive and accept both
+   * separators, so `C:/a/B.txt` and `c:\\a\\b.txt` are the same tab.
+   */
+  private pathKey(path: string): string {
+    return this.app.info.platform === 'windows' ? path.replace(/\//g, '\\').toLowerCase() : path;
+  }
+
+  findTab(path: string): Tab | undefined {
+    const key = this.pathKey(path);
+    return this.tabs.find((t) => t.path !== null && this.pathKey(t.path) === key);
+  }
+
+  private setReadOnly(tab: Tab, readOnly: boolean): void {
+    if (tab.readOnly === readOnly) return;
+    tab.readOnly = readOnly;
+    this.update(tab, { effects: readOnlyC.reconfigure(EditorState.readOnly.of(readOnly)) });
   }
 
   isDirty(tab: Tab): boolean {
@@ -234,7 +260,7 @@ export class Workbench {
 
   /** Open a file in a tab. Non-text files are handed to the system default app. */
   async openFile(path: string, opts: { activate?: boolean; quiet?: boolean } = {}): Promise<Tab | null> {
-    const existing = this.tabs.find((t) => t.path === path);
+    const existing = this.findTab(path);
     if (existing) {
       if (opts.activate !== false) this.activate(existing);
       return existing;
@@ -248,7 +274,7 @@ export class Workbench {
       return null;
     }
     // A second request for the same file may have finished while we waited.
-    const raced = this.tabs.find((t) => t.path === path);
+    const raced = this.findTab(path);
     if (raced) {
       if (opts.activate !== false) this.activate(raced);
       return raced;
@@ -319,7 +345,14 @@ export class Workbench {
         { label: 'Cancel', value: 'cancel' },
       ]);
       if (choice === undefined || choice === 'cancel') return false;
-      if (choice === 'save' && !(await this.save(tab))) return false;
+      if (choice === 'save') {
+        if (!(await this.save(tab))) return false;
+        // Anything typed while the save was in flight is not on disk.
+        if (this.isDirty(tab)) {
+          toast(`${tab.title} changed while it was being saved, so it was left open.`, 'warn');
+          return false;
+        }
+      }
     }
     const index = this.tabs.indexOf(tab);
     if (index < 0) return true;
@@ -352,7 +385,7 @@ export class Workbench {
   async reopenClosed(): Promise<void> {
     while (this.closed.length > 0) {
       const path = this.closed.pop()!;
-      if (this.tabs.some((t) => t.path === path)) continue;
+      if (this.findTab(path)) continue;
       if (await this.openFile(path)) return;
     }
   }
@@ -413,8 +446,15 @@ export class Workbench {
     const dir = tab.path ? dirname(tab.path) : this.app.explorer.root ?? this.app.info.home;
     const target = await this.app.backend.pickSave(dir, tab.path ? basename(tab.path) : tab.title);
     if (!target) return false;
-    const other = this.tabs.find((t) => t !== tab && t.path === target);
-    if (other) await this.close(other, true);
+    const other = this.findTab(target);
+    const replaced = other && other !== tab ? other : null;
+    if (replaced && this.isDirty(replaced)) {
+      const choice = await this.app.palette.confirm(`${replaced.title} is open with unsaved changes. Replace it?`, [
+        { label: 'Replace and Discard Its Changes', value: 'replace' },
+        { label: 'Cancel', value: 'cancel' },
+      ]);
+      if (choice !== 'replace') return false;
+    }
     const doc = this.stateOf(tab).doc;
     try {
       tab.mtime = await this.app.backend.writeFile(target, doc.sliceString(0, undefined, tab.eol));
@@ -422,14 +462,13 @@ export class Workbench {
       toast(`Cannot save ${basename(target)}: ${errorText(e)}`, 'error');
       return false;
     }
+    // Only now that the write succeeded does the tab it replaced go away.
+    if (replaced && this.tabs.includes(replaced)) await this.close(replaced, true);
     tab.path = target;
     tab.title = basename(target);
     tab.saved = doc;
     tab.conflict = false;
-    if (tab.readOnly) {
-      tab.readOnly = false;
-      this.update(tab, { effects: readOnlyC.reconfigure(EditorState.readOnly.of(false)) });
-    }
+    this.setReadOnly(tab, false);
     this.detectLanguage(tab);
     this.app.addRecent('file', target);
     this.refreshChrome();
@@ -457,12 +496,24 @@ export class Workbench {
 
   // ----- reacting to the outside world ------------------------------------
 
-  /** A file changed on disk: reload clean tabs, flag dirty ones. */
-  async handleFsChange(paths: string[]): Promise<void> {
-    for (const tab of this.tabs) {
-      if (!tab.path || !paths.includes(tab.path)) continue;
+  private fsQueue: Promise<void> = Promise.resolve();
+
+  /**
+   * A file changed on disk: reload clean tabs, flag dirty ones. Notifications
+   * are handled one at a time, so an older read can never land after a newer one.
+   */
+  handleFsChange(paths: string[]): Promise<void> {
+    this.fsQueue = this.fsQueue.then(() => this.reloadChanged(paths)).catch((e) => console.error('[fedit] reload failed', e));
+    return this.fsQueue;
+  }
+
+  private async reloadChanged(paths: string[]): Promise<void> {
+    const changed = new Set(paths.map((p) => this.pathKey(p)));
+    for (const tab of [...this.tabs]) {
+      if (!tab.path || !changed.has(this.pathKey(tab.path))) continue;
       const path = tab.path;
       const stat = await this.app.backend.stat(path);
+      if (!this.tabs.includes(tab) || tab.path !== path) continue;
       if (stat.kind !== 'file' || stat.mtime === tab.mtime) continue;
       if (this.isDirty(tab)) {
         tab.conflict = true;
@@ -470,21 +521,38 @@ export class Workbench {
         this.refreshChrome();
         continue;
       }
+      const knownMtime = tab.mtime;
       let data;
       try {
         data = await this.app.backend.readFile(path);
       } catch {
         continue;
       }
-      if (data.kind !== 'text' || tab.path !== path || this.isDirty(tab)) continue;
+      if (!this.tabs.includes(tab) || tab.path !== path || data.kind !== 'text') continue;
+      // Our own save finished while we were reading: the disk now holds this buffer.
+      if (tab.mtime !== knownMtime) continue;
+      if (this.isDirty(tab)) {
+        // The user typed while we were reading, so their edits now sit on top
+        // of a version that is no longer the one on disk.
+        tab.conflict = true;
+        tab.mtime = data.mtime;
+        this.refreshChrome();
+        continue;
+      }
+      // CodeMirror stores lines joined by "\n"; positions refer to that form.
+      const content = (data.content ?? '').replace(/\r\n?/g, '\n');
       const state = this.stateOf(tab);
-      const content = data.content ?? '';
-      tab.mtime = data.mtime;
-      if (state.doc.toString() === content.replace(/\r\n?/g, '\n')) continue;
-      const head = Math.min(state.selection.main.head, content.length);
-      this.update(tab, { changes: { from: 0, to: state.doc.length, insert: content }, selection: { anchor: head } });
+      if (state.doc.toString() !== content) {
+        const head = Math.min(state.selection.main.head, content.length);
+        this.update(tab, { changes: { from: 0, to: state.doc.length, insert: content }, selection: { anchor: head } });
+      }
       tab.saved = this.stateOf(tab).doc;
-      tab.eol = content.includes('\r\n') ? '\r\n' : '\n';
+      tab.eol = (data.content ?? '').includes('\r\n') ? '\r\n' : '\n';
+      tab.mtime = data.mtime;
+      if (data.lossy && !tab.readOnly) {
+        this.setReadOnly(tab, true);
+        toast(`${tab.title} is no longer valid UTF-8. It is now read-only to avoid damaging it.`, 'warn');
+      }
       this.refreshChrome();
     }
   }

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { evalWhen } from '../ui/src/context.ts';
 import {
-  formatKey, isTypingPress, keyForCommand, mergeRules, normalizeKey, pressFromEvent, resolveKey, toMacKey,
+  formatKey, isValidKey, isTypingPress, keyForCommand, mergeRules, normalizeKey, pressFromEvent, resolveKey, toMacKey,
 } from '../ui/src/keybindings.ts';
 import { parseJsonc } from '../ui/src/jsonc.ts';
 import { detectIndentation, parseSettings, SETTINGS_TEMPLATE, KEYBINDINGS_TEMPLATE } from '../ui/src/settings.ts';
@@ -80,6 +80,14 @@ test('user rules override and remove defaults', () => {
   assert.deepEqual(resolveKey(rules, ['ctrl+b'], none), { type: 'none' });
   assert.equal(resolveKey(rules, ['ctrl+d'], none).type, 'command', 'removal with a different when leaves the rule');
   assert.equal(keyForCommand(rules, 'save'), 'ctrl+s');
+});
+
+test('malformed keys are rejected instead of breaking the palette', () => {
+  for (const bad of ['ctrl+', '', '  ', 'ctrl+k ctrl+', 'a b c']) assert.equal(isValidKey(bad), false, bad);
+  for (const good of ['ctrl+a', 'ctrl++', 'f1', 'ctrl+k ctrl+o', '+']) assert.equal(isValidKey(good), true, good);
+  const rules = mergeRules([{ key: 'ctrl+s', command: 'save' }], [{ key: 'ctrl+', command: 'broken' }]);
+  assert.deepEqual(rules.map((r) => r.command), ['save']);
+  assert.equal(formatKey('ctrl+'), 'Ctrl+'); // tolerant even if one slips through
 });
 
 test('chords: prefix waits, second key completes, when is honoured', () => {

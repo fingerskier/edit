@@ -5,18 +5,19 @@
 // The desktop binary itself is downloaded from the matching GitHub release on
 // first use (or built with cargo when no prebuilt binary exists).
 
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ensureBinary } from '../lib/binary.mjs';
 import { installLauncher, launcherPaths, removeLauncher } from '../lib/desktop.mjs';
 import { PACKAGE, configDir, parseArgs } from '../lib/paths.mjs';
+import { runNpm } from '../lib/proc.mjs';
 
 const pkgRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { version } = JSON.parse(fs.readFileSync(path.join(pkgRoot, 'package.json'), 'utf8'));
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const shell = process.platform === 'win32';
+/** Records which binary the application launcher was last built for. */
+const launcherStamp = path.join(configDir(), 'launcher.json');
 
 const HELP = `Fedit ${version} — a lightweight, pluggable desktop text editor
 
@@ -39,7 +40,7 @@ Config: ${configDir()}
 `;
 
 function npmGlobalVersion() {
-  const result = spawnSync(npm, ['ls', '-g', PACKAGE, '--json', '--depth=0'], { encoding: 'utf8', shell });
+  const result = runNpm(['ls', '-g', PACKAGE, '--json', '--depth=0'], { encoding: 'utf8' });
   try {
     return JSON.parse(result.stdout).dependencies?.[PACKAGE]?.version ?? null;
   } catch {
@@ -56,20 +57,42 @@ async function install({ fromSource }) {
   if (npmGlobalVersion() !== version) {
     const spec = process.env.FEDIT_INSTALL_SPEC || `${PACKAGE}@${version}`;
     console.error(`Installing ${spec} globally…`);
-    const result = spawnSync(npm, ['install', '-g', spec], { stdio: 'inherit', shell });
+    const result = runNpm(['install', '-g', spec], { stdio: 'inherit' });
     if (result.status !== 0) {
       console.error('Global install failed. The editor still runs through npx; fix npm permissions and run `fedit install` to retry.');
     }
   }
   const binary = await ensureBinary({ version, pkgRoot, fromSource });
-  const launcher = installLauncher({ binary, version, pkgRoot });
+  const launcher = refreshLauncher(binary);
   console.error(`Fedit ${version} is installed.` + (launcher ? ` Launcher: ${launcher}` : ''));
   console.error('Run `fedit <file or folder>` from a terminal, or start Fedit from your application menu.');
   return binary;
 }
 
+/** (Re)create the application launcher for `binary` and remember that it was done. */
+function refreshLauncher(binary) {
+  const launcher = installLauncher({ binary, version, pkgRoot });
+  if (launcher) {
+    fs.mkdirSync(configDir(), { recursive: true });
+    fs.writeFileSync(launcherStamp, JSON.stringify({ binary, version }) + '\n');
+  }
+  return launcher;
+}
+
+/** True when a launcher exists but was made for a different binary (after an upgrade). */
+function launcherIsStale(binary) {
+  const entry = launcherPaths()?.entry;
+  if (!entry || !fs.existsSync(entry)) return false;
+  try {
+    return JSON.parse(fs.readFileSync(launcherStamp, 'utf8')).binary !== binary;
+  } catch {
+    return true;
+  }
+}
+
 function uninstall() {
   const removed = removeLauncher();
+  fs.rmSync(launcherStamp, { force: true });
   const bin = path.join(configDir(), 'bin');
   if (fs.existsSync(bin)) {
     fs.rmSync(bin, { recursive: true, force: true });
@@ -104,7 +127,7 @@ function plugin(args) {
   const manifest = path.join(dir, 'package.json');
   if (!fs.existsSync(manifest)) fs.writeFileSync(manifest, JSON.stringify({ name: 'fedit-plugins', private: true }, null, 2) + '\n');
   const npmArgs = [action === 'add' ? 'install' : 'uninstall', '--prefix', dir, '--no-audit', '--no-fund', ...names];
-  const status = spawnSync(npm, npmArgs, { stdio: 'inherit', shell }).status ?? 1;
+  const status = runNpm(npmArgs, { stdio: 'inherit' }).status ?? 1;
   if (status === 0) console.error('Done. Run "Developer: Reload Window" in Fedit (or restart it) to apply.');
   return status;
 }
@@ -172,9 +195,12 @@ async function main() {
       ? await install({ fromSource: false })
       : await ensureBinary({ version, pkgRoot });
   // Keep an existing launcher pointing at the current binary after an upgrade.
-  const entry = launcherPaths()?.entry;
-  if (entry && fs.existsSync(entry) && process.platform === 'linux' && !fs.readFileSync(entry, 'utf8').includes(binary)) {
-    installLauncher({ binary, version, pkgRoot });
+  if (launcherIsStale(binary)) {
+    try {
+      refreshLauncher(binary);
+    } catch (e) {
+      console.error(`Could not update the application launcher: ${e.message}`);
+    }
   }
   launch(binary, paths, flags);
 }

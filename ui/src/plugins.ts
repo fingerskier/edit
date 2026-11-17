@@ -129,6 +129,7 @@ export class PluginHost {
       if (disabled.has(source.name)) continue;
       const entry: LoadedPlugin = { name: source.name, path: source.path };
       this.loaded.push(entry);
+      const subscriptions: Disposer[] = [];
       try {
         if (source.source == null) throw new Error(source.error ?? 'not found');
         const url = URL.createObjectURL(new Blob([source.source], { type: 'text/javascript' }));
@@ -140,8 +141,16 @@ export class PluginHost {
         }
         const plugin = mod.default ?? mod;
         if (typeof plugin.activate !== 'function') throw new Error('no activate(ctx) export');
-        await plugin.activate(this.createContext(plugin.name ?? source.name, []));
+        await plugin.activate(this.createContext(plugin.name ?? source.name, subscriptions));
       } catch (e) {
+        // A plugin that failed half-way must not leave commands or keys behind.
+        for (const dispose of subscriptions.reverse()) {
+          try {
+            dispose();
+          } catch {
+            // Keep rolling back the rest.
+          }
+        }
         entry.error = errorText(e);
         toast(`Plugin "${source.name}" failed to load: ${entry.error}`, 'error');
       }

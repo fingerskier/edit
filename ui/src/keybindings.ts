@@ -110,6 +110,16 @@ export function toMacKey(key: string): string {
     .join(' ');
 }
 
+/** A binding is usable when it has one or two presses and each names a key: `ctrl+` does not. */
+export function isValidKey(key: string): boolean {
+  const presses = normalizeKey(key).split(' ');
+  return (
+    key.trim() !== '' &&
+    presses.length <= 2 &&
+    presses.every((press) => press !== '' && !press.endsWith('+') && !press.startsWith('+') && !press.includes('++'))
+  );
+}
+
 /**
  * Merge default and user rules into the effective list. Later rules win. A
  * user rule whose command starts with `-` removes earlier rules for that key
@@ -118,7 +128,7 @@ export function toMacKey(key: string): string {
 export function mergeRules(defaults: KeybindingRule[], user: KeybindingRule[]): KeybindingRule[] {
   const out: KeybindingRule[] = [];
   for (const rule of [...defaults, ...user]) {
-    if (!rule || typeof rule.key !== 'string' || typeof rule.command !== 'string') continue;
+    if (!rule || typeof rule.key !== 'string' || typeof rule.command !== 'string' || !isValidKey(rule.key)) continue;
     const key = normalizeKey(rule.key);
     if (rule.command.startsWith('-')) {
       const target = rule.command.slice(1);
@@ -168,7 +178,7 @@ export function formatKey(key: string, mac = false): string {
     .map((press) =>
       press
         .split('+')
-        .map((p) => names[p] ?? (p.length === 1 ? p.toUpperCase() : p[0].toUpperCase() + p.slice(1)))
+        .map((p) => names[p] ?? p.charAt(0).toUpperCase() + p.slice(1))
         .join(mac ? '' : '+'),
     )
     .join(' ');

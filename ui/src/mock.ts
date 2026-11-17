@@ -68,6 +68,9 @@ export function createMockBackend(): Backend {
     watched: [] as string[],
     title: '',
     clipboard: '',
+    /** Milliseconds each write takes, to test edits made while saving. */
+    writeDelay: 0,
+    failWrites: false,
     ready: false,
     quit: false,
     /** Queue of answers for the next native picker calls. */
@@ -108,9 +111,12 @@ export function createMockBackend(): Backend {
       if (!f) return fail(`No such file: ${path}`);
       if (f.content.startsWith('binary:')) return { kind: 'binary', lossy: false, mtime: f.mtime, size: f.content.length };
       if (f.content.startsWith('large:')) return { kind: 'large', lossy: false, mtime: f.mtime, size: 30_000_000 };
+      if (f.content.startsWith('lossy:')) return { kind: 'text', content: f.content.slice(6), lossy: true, mtime: f.mtime, size: f.content.length };
       return { kind: 'text', content: f.content, lossy: false, mtime: f.mtime, size: f.content.length };
     },
     writeFile: async (path, content) => {
+      if (mock.writeDelay) await new Promise((resolve) => setTimeout(resolve, mock.writeDelay));
+      if (mock.failWrites) fail('disk full');
       const mtime = put(path, content);
       changed(path);
       return mtime;

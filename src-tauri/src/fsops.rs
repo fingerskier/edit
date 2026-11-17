@@ -97,19 +97,31 @@ pub fn write_file(path: &Path, content: &str) -> R<f64> {
     let name = target.file_name().ok_or("path has no file name")?.to_string_lossy().into_owned();
     let tmp = dir.join(format!(".{}.fedit-{}.tmp", name, std::process::id()));
 
-    let result = (|| -> std::io::Result<()> {
-        let mut f = fs::File::create(&tmp)?;
+    let mut f = match fs::File::create(&tmp) {
+        Ok(f) => f,
+        Err(_) => {
+            // No temp file can be made next to the target (a read-only
+            // directory holding a writable file): writing in place is the
+            // only way to save at all.
+            fs::write(&target, content).map_err(err)?;
+            return Ok(mtime_ms(&fs::metadata(&target).map_err(err)?));
+        }
+    };
+    // Once staging has started, any failure (disk full, quota, sync error)
+    // is reported with the original file left untouched. Falling back to an
+    // in-place write here would truncate it and likely fail the same way.
+    let staged = (|| -> std::io::Result<()> {
         f.write_all(content.as_bytes())?;
         f.sync_all()?;
+        drop(f);
         if let Ok(meta) = fs::metadata(&target) {
             fs::set_permissions(&tmp, meta.permissions())?;
         }
         fs::rename(&tmp, &target)
     })();
-    if result.is_err() {
+    if let Err(e) = staged {
         let _ = fs::remove_file(&tmp);
-        // Fall back to a direct write (e.g. directory not writable but file is).
-        fs::write(&target, content).map_err(err)?;
+        return Err(e.to_string());
     }
     Ok(mtime_ms(&fs::metadata(&target).map_err(err)?))
 }
@@ -308,13 +320,17 @@ pub fn read_plugins(config: &Path, load: &[String]) -> Vec<PluginSource> {
 }
 
 /// Turn command-line arguments into absolute paths, ignoring flags.
+///
+/// Paths are made absolute lexically, not canonicalized: on Windows
+/// `canonicalize` returns `\\?\C:\…` verbatim paths, which would not match
+/// the same file reached through a dialog or the tree.
 pub fn resolve_args(args: &[String], cwd: &Path) -> Vec<String> {
     args.iter()
         .filter(|a| !a.is_empty() && !a.starts_with('-'))
         .map(|a| {
             let p = PathBuf::from(a);
-            let abs = if p.is_absolute() { p } else { cwd.join(p) };
-            fs::canonicalize(&abs).unwrap_or(abs).to_string_lossy().into_owned()
+            let joined = if p.is_absolute() { p } else { cwd.join(p) };
+            std::path::absolute(&joined).unwrap_or(joined).to_string_lossy().into_owned()
         })
         .collect()
 }
@@ -363,6 +379,31 @@ mod tests {
         assert_eq!(fs::read_to_string(&f).unwrap(), "three");
         let leftovers: Vec<_> = fs::read_dir(d.join("sub")).unwrap().flatten().collect();
         assert_eq!(leftovers.len(), 1, "temp file must not be left behind");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_staging_leaves_the_original_intact() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tmp("staging");
+        let f = d.join("keep.txt");
+        fs::write(&f, "original").unwrap();
+        // The temp file can be created but not renamed over a directory
+        // target stand-in: make the rename fail by pointing at a directory.
+        let dir_target = d.join("adir");
+        fs::create_dir(&dir_target).unwrap();
+        fs::write(dir_target.join("inner"), "x").unwrap();
+        assert!(write_file(&dir_target, "new").is_err());
+        assert!(dir_target.join("inner").exists(), "target untouched after a failed save");
+        let leftovers = fs::read_dir(&d).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().contains(".fedit-")).count();
+        assert_eq!(leftovers, 0, "temp file removed after a failed save");
+
+        // A read-only directory still allows saving a writable file in place.
+        fs::set_permissions(&d, fs::Permissions::from_mode(0o555)).unwrap();
+        let result = write_file(&f, "in place");
+        fs::set_permissions(&d, fs::Permissions::from_mode(0o755)).unwrap();
+        result.unwrap();
+        assert_eq!(fs::read_to_string(&f).unwrap(), "in place");
     }
 
     #[cfg(unix)]
@@ -451,7 +492,9 @@ mod tests {
         let d = tmp("args");
         let d = fs::canonicalize(d).unwrap();
         fs::write(d.join("f.txt"), "").unwrap();
-        let got = resolve_args(&["--flag".into(), "f.txt".into(), "nope.txt".into()], &d);
-        assert_eq!(got, [d.join("f.txt").to_string_lossy(), d.join("nope.txt").to_string_lossy()]);
+        let got = resolve_args(&["--flag".into(), "f.txt".into(), "sub/../nope.txt".into()], &d);
+        assert_eq!(got[0], d.join("f.txt").to_string_lossy());
+        assert!(Path::new(&got[1]).is_absolute() && got[1].ends_with("nope.txt"));
+        assert_eq!(got.len(), 2);
     }
 }

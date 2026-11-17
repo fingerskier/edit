@@ -223,10 +223,11 @@ async function boot(): Promise<void> {
         chordItem.text = `The key combination (${formatKey(presses.join(' '), isMac)}) is not a command.`;
         setTimeout(() => (chordItem.text = pendingChord ? chordItem.text : ''), 2500);
       } else {
-        if (!commands.has(resolution.command)) return;
+        // An empty command is an explicit "do nothing": the key is consumed.
+        if (resolution.command !== '' && !commands.has(resolution.command)) return;
         let result: unknown;
         try {
-          result = commands.executeSync(resolution.command, resolution.args);
+          result = resolution.command === '' ? undefined : commands.executeSync(resolution.command, resolution.args);
         } catch (err) {
           toast(`${resolution.command}: ${errorText(err)}`, 'error');
         }
@@ -327,23 +328,43 @@ async function boot(): Promise<void> {
     await wb.openFile(path);
   }
 
-  async function requestQuit(): Promise<void> {
+  /**
+   * Before quitting or reloading, which both drop every buffer: let the user
+   * save or knowingly discard unsaved work. Returns false to abort.
+   */
+  async function settleUnsaved(action: 'Quit' | 'Reload', verb: string): Promise<boolean> {
     const dirty = wb.tabs.filter((t) => wb.isDirty(t));
-    if (dirty.length > 0) {
-      const what = dirty.length === 1 ? dirty[0].title : `${dirty.length} files`;
-      const choice = await app.palette.confirm(`Save changes to ${what} before quitting?`, [
-        { label: 'Save All and Quit', value: 'save' },
-        { label: 'Quit Without Saving', value: 'discard' },
-        { label: 'Cancel', value: 'cancel' },
-      ]);
-      if (choice === undefined || choice === 'cancel') return;
-      if (choice === 'save') {
-        for (const tab of dirty) if (!(await wb.save(tab))) return;
-      }
+    if (dirty.length === 0) return true;
+    const what = dirty.length === 1 ? dirty[0].title : `${dirty.length} files`;
+    const choice = await app.palette.confirm(`Save changes to ${what} before ${verb}?`, [
+      { label: `Save All and ${action}`, value: 'save' },
+      { label: `${action} Without Saving`, value: 'discard' },
+      { label: 'Cancel', value: 'cancel' },
+    ]);
+    if (choice === undefined || choice === 'cancel') return false;
+    if (choice === 'discard') return true;
+    for (const tab of dirty) if (wb.tabs.includes(tab) && !(await wb.save(tab))) return false;
+    // Anything typed while the saves were in flight is not on disk.
+    if (wb.tabs.some((t) => wb.isDirty(t))) {
+      toast(`Some files changed while saving. ${action} cancelled.`, 'warn');
+      return false;
     }
-    await writeState();
-    backend.quit();
+    return true;
   }
+
+  let leaving = false;
+  async function leave(action: 'Quit' | 'Reload', verb: string, go: () => void): Promise<void> {
+    if (leaving) return;
+    leaving = true;
+    try {
+      if (!(await settleUnsaved(action, verb))) return;
+      await writeState();
+      go();
+    } finally {
+      leaving = false;
+    }
+  }
+  const requestQuit = () => leave('Quit', 'quitting', () => backend.quit());
 
   // ----- commands ----------------------------------------------------------
 
@@ -393,10 +414,7 @@ async function boot(): Promise<void> {
   reg('workbench.action.previousEditor', 'View: Open Previous Editor', () => wb.cycle(-1));
   for (let n = 1; n <= 9; n++) reg(`workbench.action.openEditorAtIndex${n}`, undefined, () => wb.activateIndex(n - 1));
   reg('workbench.action.quit', 'File: Quit', () => requestQuit());
-  reg('workbench.action.reloadWindow', 'Developer: Reload Window', async () => {
-    await writeState();
-    location.reload();
-  });
+  reg('workbench.action.reloadWindow', 'Developer: Reload Window', () => leave('Reload', 'reloading', () => location.reload()));
   reg('fedit.openPath', undefined, (path: string) => app.openPath(path));
 
   reg('workbench.action.quickOpen', 'Go to File…', () => (app.palette.isOpen ? app.palette.close(true) : quickOpen()));
