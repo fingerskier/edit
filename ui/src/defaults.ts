@@ -59,6 +59,8 @@ export const DEFAULT_KEYBINDINGS: KeybindingRule[] = [
   { key: 'ctrl+shift+z', command: 'redo', when: E },
   { key: 'ctrl+y', command: 'redo', when: E },
   { key: 'ctrl+a', command: 'editor.action.selectAll', when: E },
+  { key: 'ctrl+x', command: 'editor.action.clipboardCutAction', when: E },
+  { key: 'ctrl+c', command: 'editor.action.clipboardCopyAction', when: E },
   { key: 'ctrl+f', command: 'actions.find' },
   { key: 'ctrl+h', command: 'editor.action.startFindReplaceAction' },
   { key: 'f3', command: 'editor.action.nextMatchFindAction' },

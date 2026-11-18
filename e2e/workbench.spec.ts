@@ -248,6 +248,50 @@ test('plugins register commands, keys, status items and editor extensions', asyn
   await expect(row.locator('.key')).toHaveText('Ctrl+Alt+U');
 });
 
+test('Ctrl+X with nothing selected cuts exactly the current line', async ({ page }) => {
+  await start(page, { files: { '/w/a.txt': 'one\ntwo\nthree\nfour\n' }, paths: ['/w/a.txt'] });
+  expect(await mock(page, (m) => m.ready)).toBe(true);
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Control+c');
+  await expect.poll(() => mock(page, (m) => m.clipboard)).toBe('two\n');
+  await page.keyboard.press('Control+x');
+  await expect.poll(() => editorText(page)).toBe('one\nthree\nfour\n');
+  expect(await mock(page, (m) => m.clipboard)).toBe('two\n');
+  // A selection is cut as itself, and the line after it stays.
+  await page.keyboard.press('Shift+End');
+  await page.keyboard.press('Control+x');
+  await expect.poll(() => editorText(page)).toBe('one\n\nfour\n');
+  expect(await mock(page, (m) => m.clipboard)).toBe('three');
+});
+
+test('a cut line pastes back as a whole line, and a read-only tab still copies', async ({ page }) => {
+  await start(page, { files: { '/w/a.txt': 'one\ntwo\nthree\n', '/w/big.log': 'large:' }, paths: ['/w/a.txt'] });
+  expect(await mock(page, (m) => m.ready)).toBe(true);
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('Control+x');
+  await expect.poll(() => editorText(page)).toBe('two\nthree\n');
+  // Mid-line: the cut line goes above, it does not split "two".
+  await page.keyboard.press('ArrowRight');
+  await page.evaluate(() => (window as any).fedit.commands.execute('editor.action.clipboardPasteAction'));
+  await expect.poll(() => editorText(page)).toBe('one\ntwo\nthree\n');
+  // The webview's own paste event takes the same path.
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData('text/plain', 'one\n');
+    document.querySelector('.cm-content')!.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+  await expect.poll(() => editorText(page)).toBe('one\none\ntwo\nthree\n');
+
+  await page.evaluate(() => {
+    const f = (window as any).fedit;
+    f.workbench.active.readOnly = true;
+  });
+  await page.keyboard.press('Control+x');
+  await expect.poll(() => mock(page, (m) => m.clipboard)).toBe('two\n');
+  expect(await editorText(page)).toBe('one\none\ntwo\nthree\n');
+});
+
 test('editor context menu cuts, copies and pastes through the system clipboard', async ({ page }) => {
   await start(page, { files: { '/w/a.txt': 'alpha beta\n' }, paths: ['/w/a.txt'] });
   expect(await mock(page, (m) => m.ready)).toBe(true);

@@ -580,24 +580,78 @@ async function boot(): Promise<void> {
 
   // The webview's own context menu offers "Reload", which would discard
   // unsaved work, so the editor gets a menu of its own and the rest get none.
-  const selectedText = () => {
+  // Cut and copy are commands of our own rather than the webview's: WebKitGTK
+  // delivers the native cut twice, which took the following line as well.
+  // As in VS Code, with nothing selected they act on the whole line.
+  const clipboardTarget = () => {
     const s = wb.view.state;
-    return s.selection.ranges.filter((r) => !r.empty).map((r) => s.sliceDoc(r.from, r.to)).join(s.lineBreak);
+    const ranges = s.selection.ranges.filter((r) => !r.empty).map((r) => ({ from: r.from, to: r.to }));
+    if (ranges.length) return { ranges, text: ranges.map((r) => s.sliceDoc(r.from, r.to)).join(s.lineBreak) };
+    const lines: string[] = [];
+    let last = 0;
+    for (const { head } of s.selection.ranges) {
+      const line = s.doc.lineAt(head);
+      if (line.number === last) continue;
+      last = line.number;
+      lines.push(line.text);
+      ranges.push({ from: line.from, to: Math.min(s.doc.length, line.to + 1) });
+    }
+    return { ranges, text: lines.join(s.lineBreak) + s.lineBreak, linewise: true };
+  };
+  // The last whole-line copy. Pasting it back puts it on lines of its own,
+  // above the cursor's line, instead of splitting that line.
+  let linewiseCopy: string | null = null;
+  const sameText = (a: string, b: string | null) => b !== null && a.replace(/\r\n?/g, '\n') === b.replace(/\r\n?/g, '\n');
+  const copyTarget = async () => {
+    const target = clipboardTarget();
+    await backend.clipboardWrite(target.text);
+    linewiseCopy = 'linewise' in target ? target.text : null;
+    return target;
+  };
+  /** Insert whole copied lines above each cursor; false when `text` is not such a copy. */
+  const pasteLinewise = (text: string): boolean => {
+    const s = wb.view.state;
+    if (!sameText(text, linewiseCopy) || !s.selection.ranges.every((r) => r.empty)) return false;
+    const lines = text.replace(/\r\n?/g, '\n').replace(/\n$/, '').split('\n');
+    const each = lines.length === s.selection.ranges.length; // one copied line per cursor
+    let i = 0;
+    wb.view.dispatch(
+      s.changeByRange((range) => {
+        const line = s.doc.lineAt(range.from);
+        const insert = s.toText((each ? lines[i++] : lines.join(s.lineBreak)) + s.lineBreak);
+        return { changes: { from: line.from, insert }, range: EditorSelection.cursor(range.from + insert.length) };
+      }),
+      { userEvent: 'input.paste', scrollIntoView: true },
+    );
+    return true;
   };
   reg('editor.action.clipboardCopyAction', undefined, async () => {
-    const text = selectedText();
-    if (text) await backend.clipboardWrite(text);
+    await copyTarget();
   });
   reg('editor.action.clipboardCutAction', undefined, async () => {
-    const text = selectedText();
-    if (!text || wb.active?.readOnly) return;
-    await backend.clipboardWrite(text);
-    wb.view.dispatch(wb.view.state.replaceSelection(''), { userEvent: 'delete.cut' });
+    const state = wb.view.state;
+    const { ranges } = await copyTarget();
+    // A read-only tab still copies. The clipboard write is asynchronous, so
+    // never apply these ranges to a document that changed meanwhile.
+    if (wb.active?.readOnly || wb.view.state !== state) return;
+    wb.view.dispatch({ changes: ranges, scrollIntoView: true, userEvent: 'delete.cut' });
   });
   reg('editor.action.clipboardPasteAction', undefined, async () => {
     const text = await backend.clipboardRead();
-    if (text && !wb.active?.readOnly) wb.view.dispatch(wb.view.state.replaceSelection(text), { userEvent: 'input.paste', scrollIntoView: true });
+    if (!text || wb.active?.readOnly || pasteLinewise(text)) return;
+    wb.view.dispatch(wb.view.state.replaceSelection(text), { userEvent: 'input.paste', scrollIntoView: true });
   });
+  // Ctrl+V stays the webview's own paste; only a whole-line copy is placed here.
+  wb.view.dom.addEventListener(
+    'paste',
+    (e) => {
+      const text = e.clipboardData?.getData('text/plain');
+      if (!text || wb.active?.readOnly || !(e.target as HTMLElement).closest('.cm-content') || !pasteLinewise(text)) return;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    true,
+  );
   window.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     if (!(e.target as HTMLElement).closest('.cm-content') || !wb.active) return;
