@@ -83,6 +83,15 @@ async fn write_file(path: String, content: String) -> R<f64> {
     fsops::write_file(Path::new(&path), &content)
 }
 
+/// Save what a window remembers into the shared state file. See `fsops::update_state`.
+#[tauri::command]
+async fn update_state(
+    patch: serde_json::Map<String, serde_json::Value>,
+    recents: Vec<fsops::RecentOp>,
+) -> R<serde_json::Value> {
+    fsops::update_state(&fsops::config_dir().join("state.json"), patch, &recents)
+}
+
 #[tauri::command]
 async fn read_dir(path: String) -> R<Vec<DirEntry>> {
     fsops::read_dir(Path::new(&path))
@@ -316,7 +325,12 @@ fn main() {
             let rest: Vec<String> = argv.into_iter().skip(1).collect();
             let paths = fsops::resolve_args(&rest, Path::new(&cwd));
             if rest.iter().any(|a| a == "--new-window" || a == "-n") {
-                let _ = open_window(app, paths);
+                // Not from inside this callback: on Windows it runs in a
+                // window-message handler, where creating a webview deadlocks.
+                let app = app.clone();
+                std::thread::spawn(move || {
+                    let _ = open_window(&app, paths);
+                });
             } else if let Some(w) = target_window(app) {
                 // Queued if that window is still starting up.
                 deliver_paths(app, w.label(), paths);
@@ -381,6 +395,7 @@ fn main() {
             app_info,
             read_file,
             write_file,
+            update_state,
             read_dir,
             list_files,
             stat,

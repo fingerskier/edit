@@ -41,6 +41,8 @@ export interface PluginSource {
   error?: string | null;
 }
 
+import type { RecentOp, Recents } from './recents.ts';
+
 export type BackendEvent = 'fs-changed' | 'open-paths' | 'close-requested';
 
 export interface Backend {
@@ -48,6 +50,12 @@ export interface Backend {
   readFile(path: string): Promise<FileData>;
   /** Returns the new modification time. */
   writeFile(path: string, content: string): Promise<number>;
+  /**
+   * Update the state file every window shares, as one step in the host: apply
+   * `recents`, then replace the top-level keys in `patch`. Resolves the state
+   * as written, which includes what other windows saved.
+   */
+  updateState(patch: Record<string, unknown>, recents: RecentOp[]): Promise<Recents>;
   readDir(path: string): Promise<DirEntry[]>;
   listFiles(root: string, limit: number): Promise<string[]>;
   stat(path: string): Promise<Stat>;
@@ -91,6 +99,7 @@ async function createTauriBackend(): Promise<Backend> {
     info: () => invoke('app_info'),
     readFile: (path) => invoke('read_file', { path }),
     writeFile: (path, content) => invoke('write_file', { path, content }),
+    updateState: (patch, recents) => invoke('update_state', { patch, recents }),
     readDir: (path) => invoke('read_dir', { path }),
     listFiles: (root, limit) => invoke('list_files', { root, limit }),
     stat: (path) => invoke('stat', { path }),

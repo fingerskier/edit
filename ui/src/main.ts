@@ -18,6 +18,7 @@ import {
   formatKey, isTypingPress, keyForCommand, mergeRules, pressFromEvent, resolveKey, toMacKey, type KeybindingRule,
 } from './keybindings.ts';
 import { parseJsonc } from './jsonc.ts';
+import { applyRecentOps, type RecentOp } from './recents.ts';
 import { Palette, filterItems, type PickItem } from './palette.ts';
 import { basename, dirname, join, relative, tildify } from './paths.ts';
 import { PluginHost } from './plugins.ts';
@@ -78,12 +79,12 @@ async function boot(): Promise<void> {
 
   let booted = false;
   let stateTimer: number | undefined;
-  // Every window shares state.json. Changes to the recent lists are kept as
-  // operations and replayed over what is on disk, so one window's write does
-  // not erase files another window opened since.
-  const recentOps: ((s: PersistedState) => void)[] = [];
-  const changeRecents = (op: (s: PersistedState) => void) => {
-    op(state);
+  // Every window shares state.json, so it is only changed through the host,
+  // which merges: changes to the recent lists are sent as operations, and the
+  // session is sent by the first window alone, the one that restores it.
+  const recentOps: RecentOp[] = [];
+  const changeRecents = (op: RecentOp) => {
+    applyRecentOps(state, [op]);
     recentOps.push(op);
     app.saveState();
   };
@@ -92,23 +93,17 @@ async function boot(): Promise<void> {
     stateTimer = undefined;
     if (!booted) return;
     const ops = recentOps.splice(0);
-    let session = state.session;
+    if (info.restore) state.session = currentSession();
+    const patch: Record<string, unknown> = { sidebar: state.sidebar, zoom: state.zoom };
+    if (info.restore) patch.session = state.session;
     try {
-      const disk = JSON.parse((await readText(statePath)) ?? 'null');
-      // The session belongs to the first window, the one that restores it.
-      if (!info.restore && disk?.session) session = disk.session;
-      if (Array.isArray(disk?.recentFiles) && Array.isArray(disk?.recentFolders)) {
-        state.recentFiles = disk.recentFiles;
-        state.recentFolders = disk.recentFolders;
-        for (const op of [...ops, ...recentOps]) op(state);
-      }
-    } catch {
-      // Unreadable: what this window knows is written as it is.
-    }
-    state.session = info.restore ? currentSession() : session;
-    try {
-      await backend.writeFile(statePath, JSON.stringify(state, null, 2));
+      const saved = await backend.updateState(patch, ops);
+      // Take in what other windows opened, keeping changes made meanwhile.
+      state.recentFiles = saved.recentFiles;
+      state.recentFolders = saved.recentFolders;
+      applyRecentOps(state, recentOps);
     } catch (e) {
+      recentOps.unshift(...ops);
       console.error('[fedit] cannot save state', e);
     }
   };
@@ -131,15 +126,10 @@ async function boot(): Promise<void> {
     },
     addRecent(kind: 'file' | 'folder', path: string) {
       const key = kind === 'file' ? 'recentFiles' : 'recentFolders';
-      changeRecents((s) => {
-        s[key] = [path, ...s[key].filter((p) => p !== path)].slice(0, kind === 'file' ? MAX_RECENT_FILES : MAX_RECENT_FOLDERS);
-      });
+      changeRecents({ op: 'add', list: key, path, max: kind === 'file' ? MAX_RECENT_FILES : MAX_RECENT_FOLDERS });
     },
     removeRecent(path: string) {
-      changeRecents((s) => {
-        s.recentFiles = s.recentFiles.filter((p) => p !== path);
-        s.recentFolders = s.recentFolders.filter((p) => p !== path);
-      });
+      changeRecents({ op: 'remove', path });
     },
     async openPath(path: string) {
       const stat = await backend.stat(path);
@@ -435,10 +425,7 @@ async function boot(): Promise<void> {
     await app.openPath(path);
   });
   reg('workbench.action.clearRecentFiles', 'File: Clear Recently Opened', () => {
-    changeRecents((s) => {
-      s.recentFiles = [];
-      s.recentFolders = [];
-    });
+    changeRecents({ op: 'clear' });
     explorer.render();
   });
   reg('workbench.action.files.save', 'File: Save', () => wb.save());

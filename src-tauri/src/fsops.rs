@@ -1,10 +1,13 @@
 //! Filesystem operations behind the editor's commands. Pure std + a few small
 //! crates, with no Tauri types, so everything here is unit-testable.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
 
 /// Files larger than this are not loaded into the editor.
@@ -95,7 +98,11 @@ pub fn write_file(path: &Path, content: &str) -> R<f64> {
     let dir = target.parent().ok_or("path has no parent directory")?.to_path_buf();
     fs::create_dir_all(&dir).map_err(err)?;
     let name = target.file_name().ok_or("path has no file name")?.to_string_lossy().into_owned();
-    let tmp = dir.join(format!(".{}.fedit-{}.tmp", name, std::process::id()));
+    // Unique per write: two windows saving the same file at once must not
+    // share a staging file.
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    let tmp = dir.join(format!(".{}.fedit-{}-{}.tmp", name, std::process::id(), seq));
 
     let mut f = match fs::File::create(&tmp) {
         Ok(f) => f,
@@ -124,6 +131,68 @@ pub fn write_file(path: &Path, content: &str) -> R<f64> {
         return Err(e.to_string());
     }
     Ok(mtime_ms(&fs::metadata(&target).map_err(err)?))
+}
+
+/// A change to the remembered recent files or folders.
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum RecentOp {
+    /// Move `path` to the front of `list`, keeping at most `max` entries.
+    Add { list: String, path: String, max: usize },
+    Remove { path: String },
+    Clear,
+}
+
+const RECENT_LISTS: [&str; 2] = ["recentFiles", "recentFolders"];
+
+fn recent_list<'a>(state: &'a mut Map<String, Value>, key: &str) -> &'a mut Vec<Value> {
+    let slot = state.entry(key.to_string()).or_insert_with(|| Value::Array(Vec::new()));
+    if !slot.is_array() {
+        *slot = Value::Array(Vec::new());
+    }
+    slot.as_array_mut().unwrap()
+}
+
+/// Update the state file shared by every window, as one step: read it, apply
+/// the recent-list changes, replace the top-level keys in `patch`, write it
+/// back. Returns the state as written. Windows change the file only through
+/// this, so one window never writes over what another just saved.
+pub fn update_state(file: &Path, patch: Map<String, Value>, recents: &[RecentOp]) -> R<Value> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    // A missing or damaged file starts over; it only costs what was remembered.
+    let mut state = fs::read_to_string(file)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    for op in recents {
+        match op {
+            RecentOp::Add { list, path, max } => {
+                if !RECENT_LISTS.contains(&list.as_str()) {
+                    return Err(format!("unknown recent list: {list}"));
+                }
+                let items = recent_list(&mut state, list);
+                items.retain(|p| p.as_str() != Some(path.as_str()));
+                items.insert(0, Value::String(path.clone()));
+                items.truncate(*max);
+            }
+            RecentOp::Remove { path } => {
+                for key in RECENT_LISTS {
+                    recent_list(&mut state, key).retain(|p| p.as_str() != Some(path.as_str()));
+                }
+            }
+            RecentOp::Clear => {
+                for key in RECENT_LISTS {
+                    recent_list(&mut state, key).clear();
+                }
+            }
+        }
+    }
+    state.extend(patch);
+    let state = Value::Object(state);
+    write_file(file, &serde_json::to_string_pretty(&state).map_err(err)?)?;
+    Ok(state)
 }
 
 pub fn read_dir(path: &Path) -> R<Vec<DirEntry>> {
@@ -496,5 +565,60 @@ mod tests {
         assert_eq!(got[0], d.join("f.txt").to_string_lossy());
         assert!(Path::new(&got[1]).is_absolute() && got[1].ends_with("nope.txt"));
         assert_eq!(got.len(), 2);
+    }
+
+    #[test]
+    fn state_updates_merge_instead_of_overwriting() {
+        let d = tmp("state");
+        let file = d.join("state.json");
+        let add = |list: &str, path: &str| RecentOp::Add { list: list.into(), path: path.into(), max: 3 };
+        let patch = |v: Value| v.as_object().cloned().unwrap();
+
+        // The first window saves its session and a recent file.
+        update_state(&file, patch(serde_json::json!({ "session": { "files": ["/a"] }, "zoom": 1 })), &[add("recentFiles", "/a")]).unwrap();
+        // A second window knows nothing of that, and sends no session.
+        let out = update_state(&file, patch(serde_json::json!({ "zoom": 2 })), &[add("recentFiles", "/b"), add("recentFolders", "/dir")]).unwrap();
+        assert_eq!(out["recentFiles"], serde_json::json!(["/b", "/a"]));
+        assert_eq!(out["recentFolders"], serde_json::json!(["/dir"]));
+        assert_eq!(out["session"]["files"], serde_json::json!(["/a"]));
+        assert_eq!(out["zoom"], 2);
+        assert_eq!(serde_json::from_str::<Value>(&fs::read_to_string(&file).unwrap()).unwrap(), out);
+
+        // Re-adding moves to the front; the list is capped; remove and clear work.
+        let out = update_state(&file, Map::new(), &[add("recentFiles", "/c"), add("recentFiles", "/d"), add("recentFiles", "/a")]).unwrap();
+        assert_eq!(out["recentFiles"], serde_json::json!(["/a", "/d", "/c"]));
+        let out = update_state(&file, Map::new(), &[RecentOp::Remove { path: "/d".into() }]).unwrap();
+        assert_eq!(out["recentFiles"], serde_json::json!(["/a", "/c"]));
+        let out = update_state(&file, Map::new(), &[RecentOp::Clear]).unwrap();
+        assert_eq!(out["recentFiles"], serde_json::json!([]));
+        assert!(update_state(&file, Map::new(), &[add("session", "/x")]).is_err());
+
+        // A damaged file is replaced rather than failing every save.
+        fs::write(&file, "{ not json").unwrap();
+        let out = update_state(&file, Map::new(), &[add("recentFiles", "/z")]).unwrap();
+        assert_eq!(out["recentFiles"], serde_json::json!(["/z"]));
+    }
+
+    #[test]
+    fn concurrent_writes_to_one_file_do_not_mix() {
+        let d = tmp("concurrent");
+        let file = d.join("same.txt");
+        let handles: Vec<_> = (0..8)
+            .map(|i| {
+                let file = file.clone();
+                std::thread::spawn(move || {
+                    let body = i.to_string().repeat(200_000);
+                    for _ in 0..5 {
+                        write_file(&file, &body).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        let got = fs::read_to_string(&file).unwrap();
+        assert_eq!(got.len(), 200_000);
+        assert!(got.chars().all(|c| c == got.chars().next().unwrap()), "content from two writers was mixed");
     }
 }

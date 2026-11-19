@@ -5,6 +5,7 @@
 // Tests may seed it before load through `window.__FEDIT_SEED__`, and inspect
 // what the UI asked the host to do through `window.__mock`.
 
+import { applyRecentOps } from './recents.ts';
 import type { AppInfo, Backend, DirEntry, FileData, PluginSource, Stat } from './backend.ts';
 
 interface Seed {
@@ -124,6 +125,20 @@ export function createMockBackend(): Backend {
       const mtime = put(path, content);
       changed(path);
       return mtime;
+    },
+    updateState: async (patch, recents) => {
+      let state: any = {};
+      try {
+        state = JSON.parse(fs.files['/config/state.json']?.content ?? '{}');
+      } catch {
+        // A damaged file starts over.
+      }
+      state.recentFiles = Array.isArray(state.recentFiles) ? state.recentFiles : [];
+      state.recentFolders = Array.isArray(state.recentFolders) ? state.recentFolders : [];
+      applyRecentOps(state, recents);
+      Object.assign(state, patch);
+      put('/config/state.json', JSON.stringify(state, null, 2));
+      return state;
     },
     readDir: async (path): Promise<DirEntry[]> => {
       if (!fs.dirs.includes(path)) return fail(`No such directory: ${path}`);
