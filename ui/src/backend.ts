@@ -8,8 +8,10 @@ export interface AppInfo {
   platform: string;
   sep: string;
   home: string;
-  /** Paths given on the command line. */
+  /** Paths this window was asked to open: the command line, or a new window's files. */
   paths: string[];
+  /** Whether this window reopens the previous session. Only the app's first window does. */
+  restore: boolean;
 }
 
 export interface FileData {
@@ -68,6 +70,11 @@ export interface Backend {
    * itself. Resolves any paths the OS asked to open while the UI was starting.
    */
   ready(): Promise<string[]>;
+  /** Open another editor window on these paths (none: an empty window). */
+  newWindow(paths: string[]): Promise<void>;
+  /** Close this window now. The last window to close ends the app. */
+  closeWindow(): void;
+  /** Ask every window to close; each raises `close-requested` and decides for itself. */
   quit(): void;
   on(event: BackendEvent, handler: (payload: any) => void): void;
   /** Files dropped onto the window. */
@@ -76,7 +83,9 @@ export interface Backend {
 
 async function createTauriBackend(): Promise<Backend> {
   const { invoke } = await import('@tauri-apps/api/core');
-  const { listen } = await import('@tauri-apps/api/event');
+  const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+  // Listen on this window only: a plain `listen` also hears other windows' events.
+  const self = getCurrentWebviewWindow();
   const { getCurrentWebview } = await import('@tauri-apps/api/webview');
   return {
     info: () => invoke('app_info'),
@@ -100,8 +109,10 @@ async function createTauriBackend(): Promise<Backend> {
     clipboardRead: () => invoke('clipboard_read'),
     clipboardWrite: (text) => invoke('clipboard_write', { text }),
     ready: () => invoke('frontend_ready'),
+    newWindow: (paths) => invoke('new_window', { paths }),
+    closeWindow: () => void invoke('close_window'),
     quit: () => void invoke('quit'),
-    on: (event, handler) => void listen(event, (e) => handler(e.payload)),
+    on: (event, handler) => void self.listen(event, (e) => handler(e.payload)),
     onDrop: (handler) =>
       void getCurrentWebview().onDragDropEvent((e) => {
         if (e.payload.type === 'drop') handler(e.payload.paths);

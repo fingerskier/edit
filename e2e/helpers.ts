@@ -4,6 +4,8 @@ export interface Seed {
   files?: Record<string, string>;
   dirs?: string[];
   paths?: string[];
+  /** False to start like a second window, which does not restore the session. */
+  restore?: boolean;
   plugins?: { name: string; path: string; source?: string; error?: string }[];
 }
 

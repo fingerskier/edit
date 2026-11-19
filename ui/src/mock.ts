@@ -12,6 +12,7 @@ interface Seed {
   files?: Record<string, string>;
   dirs?: string[];
   paths?: string[];
+  restore?: boolean;
   plugins?: PluginSource[];
 }
 
@@ -73,6 +74,8 @@ export function createMockBackend(): Backend {
     failWrites: false,
     ready: false,
     quit: false,
+    /** Paths of each window opened with `newWindow`. */
+    windows: [] as string[][],
     /** Queue of answers for the next native picker calls. */
     picks: [] as (string | string[] | null)[],
     emit,
@@ -92,6 +95,7 @@ export function createMockBackend(): Backend {
     sep: '/',
     home: '/work',
     paths: firstLoad ? (seed.paths ?? []) : [],
+    restore: seed.restore ?? true,
   };
 
   const stat = (path: string): Stat => {
@@ -199,9 +203,12 @@ export function createMockBackend(): Backend {
       mock.ready = true;
       return [];
     },
-    quit: () => {
+    newWindow: async (paths) => void mock.windows.push(paths),
+    closeWindow: () => {
       mock.quit = true;
     },
+    // The host asks each window to close; here there is only this one.
+    quit: () => emit('close-requested'),
     on: (event, handler) => void (handlers[event] ??= []).push(handler),
     onDrop: (handler) => void (handlers['drop'] ??= []).push(handler),
   };

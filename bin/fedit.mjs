@@ -30,7 +30,8 @@ Usage:
   fedit plugin list          List plugins
 
 Options:
-  --new-instance   Open a separate window instead of reusing the running one
+  -n, --new-window Open the paths in a new window of the running app
+  --new-instance   Start a separate, independent copy of the app
   --from-source    With install: build the app with cargo instead of downloading
   --verbose        Keep the app attached to this terminal and show its output
   -v, --version    Print the version
@@ -135,6 +136,8 @@ function plugin(args) {
 function launch(binary, paths, flags) {
   const env = { ...process.env };
   if (flags.has('--new-instance')) env.FEDIT_NEW_INSTANCE = '1';
+  // The app itself reads this one: a running copy opens the paths in a new window.
+  if (flags.has('--new-window') || flags.has('-n')) paths = ['--new-window', ...paths];
   if (flags.has('--verbose')) {
     const child = spawn(binary, paths, { stdio: 'inherit', env });
     child.on('exit', (code) => process.exit(code ?? 0));

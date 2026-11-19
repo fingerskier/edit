@@ -140,6 +140,20 @@ test('cli: starts the app detached with absolute paths', { skip: process.platfor
   assert.equal(fs.readFileSync(out, 'utf8'), `${fs.realpathSync(home)}/rel.txt\n/abs/dir\n1\n`);
 });
 
+test('cli: --new-window is passed on to the app, which opens the paths in a new window', { skip: process.platform === 'win32' }, () => {
+  const home = tmp();
+  const out = path.join(home, 'args.txt');
+  const fake = path.join(home, 'fake');
+  fs.writeFileSync(fake, `#!/bin/sh\nprintf '%s\\n' "$@" > "${out}"\n`, { mode: 0o755 });
+  for (const flag of ['--new-window', '-n']) {
+    const result = spawnSync(process.execPath, [fedit, flag, 'rel.txt'], {
+      encoding: 'utf8', cwd: home, env: { ...process.env, FEDIT_HOME: home, FEDIT_BINARY: fake },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fs.readFileSync(out, 'utf8'), `--new-window\n${fs.realpathSync(home)}/rel.txt\n`);
+  }
+});
+
 test('package and crate versions match, so the launcher downloads the right release', () => {
   const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const cargo = fs.readFileSync(path.join(root, 'src-tauri', 'Cargo.toml'), 'utf8');

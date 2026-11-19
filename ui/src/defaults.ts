@@ -23,6 +23,8 @@ export const DEFAULT_KEYBINDINGS: KeybindingRule[] = [
   { key: 'ctrl+shift+t', command: 'workbench.action.reopenClosedEditor' },
   { key: 'ctrl+k r', command: 'revealFileInOS' },
   { key: 'shift+alt+c', command: 'copyFilePath' },
+  { key: 'ctrl+shift+n', command: 'workbench.action.newWindow' },
+  { key: 'ctrl+shift+w', command: 'workbench.action.closeWindow' },
   { key: 'ctrl+q', command: 'workbench.action.quit' },
 
   // Navigation

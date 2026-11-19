@@ -6,11 +6,11 @@ mod fsops;
 use fsops::{err, DirEntry, FileData, PluginSource, Stat, R};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 
@@ -20,15 +20,29 @@ struct Watching {
     paths: HashSet<PathBuf>,
 }
 
-struct AppState {
-    watching: Mutex<Watching>,
+/// What the host keeps for each editor window, by window label.
+#[derive(Default)]
+struct WindowState {
     /// Paths to open that the UI has not been told about yet: the command
-    /// line of the first instance, plus files the OS asked us to open before
-    /// the UI was listening.
-    pending_paths: Mutex<Vec<String>>,
+    /// line, or files the OS asked us to open before the UI was listening.
+    pending: Vec<String>,
     /// Set once the UI is listening for `close-requested`. Until then the
     /// window closes normally, so a UI that failed to start can still be shut.
-    frontend_ready: AtomicBool,
+    ready: bool,
+    /// Directories this window wants watched.
+    watched: HashSet<PathBuf>,
+}
+
+/// The window the app starts with. It alone restores the previous session.
+const MAIN: &str = "main";
+
+struct AppState {
+    /// One watcher serves every window: it watches the union of their sets.
+    watching: Mutex<Watching>,
+    windows: Mutex<HashMap<String, WindowState>>,
+    /// Label of the window that last had focus: where `fedit <path>` opens.
+    last_focused: Mutex<String>,
+    next_window: AtomicUsize,
 }
 
 #[derive(Serialize)]
@@ -40,17 +54,22 @@ struct AppInfo {
     sep: String,
     home: String,
     paths: Vec<String>,
+    /// Whether this window should reopen the previous session.
+    restore: bool,
 }
 
 #[tauri::command]
-fn app_info(app: AppHandle, state: State<AppState>) -> AppInfo {
+fn app_info(app: AppHandle, window: WebviewWindow, state: State<AppState>) -> AppInfo {
+    let mut windows = state.windows.lock().unwrap();
+    let paths = std::mem::take(&mut windows.entry(window.label().to_string()).or_default().pending);
     AppInfo {
         config_dir: fsops::config_dir().to_string_lossy().into_owned(),
         version: app.package_info().version.to_string(),
         platform: std::env::consts::OS,
         sep: std::path::MAIN_SEPARATOR.to_string(),
         home: std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default(),
-        paths: std::mem::take(&mut *state.pending_paths.lock().unwrap()),
+        paths,
+        restore: window.label() == MAIN,
     }
 }
 
@@ -114,15 +133,14 @@ async fn read_plugins(load: Vec<String>) -> Vec<PluginSource> {
     fsops::read_plugins(&fsops::config_dir(), &load)
 }
 
-/// Replace the set of watched directories (non-recursive). The frontend sends
-/// the expanded tree folders plus the folders of open files.
-#[tauri::command]
-fn watch_paths(paths: Vec<String>, state: State<AppState>) -> R<()> {
-    let mut w = state.watching.lock().map_err(err)?;
-    let wanted: HashSet<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
+/// Point the watcher at the union of what the open windows want watched.
+fn sync_watches(state: &AppState) {
+    let wanted: HashSet<PathBuf> =
+        state.windows.lock().unwrap().values().flat_map(|w| w.watched.iter().cloned()).collect();
+    let mut w = state.watching.lock().unwrap();
     let stale: Vec<PathBuf> = w.paths.difference(&wanted).cloned().collect();
     let fresh: Vec<PathBuf> = wanted.difference(&w.paths).cloned().collect();
-    let Some(watcher) = w.watcher.as_mut() else { return Ok(()) };
+    let Some(watcher) = w.watcher.as_mut() else { return };
     let mut kept = Vec::new();
     for p in &stale {
         let _ = watcher.unwatch(p);
@@ -137,15 +155,23 @@ fn watch_paths(paths: Vec<String>, state: State<AppState>) -> R<()> {
         w.paths.remove(&p);
     }
     w.paths.extend(kept);
-    Ok(())
+}
+
+/// Replace this window's set of watched directories (non-recursive). The
+/// frontend sends the expanded tree folders plus the folders of open files.
+#[tauri::command]
+fn watch_paths(paths: Vec<String>, window: WebviewWindow, state: State<AppState>) {
+    state.windows.lock().unwrap().entry(window.label().to_string()).or_default().watched =
+        paths.into_iter().map(PathBuf::from).collect();
+    sync_watches(&state);
 }
 
 fn picked(path: Option<tauri_plugin_dialog::FilePath>) -> Option<String> {
     path.and_then(|p| p.into_path().ok()).map(|p| p.to_string_lossy().into_owned())
 }
 
-fn dialog_at(app: &AppHandle, dir: Option<String>) -> tauri_plugin_dialog::FileDialogBuilder<tauri::Wry> {
-    let mut d = app.dialog().file();
+fn dialog_at(window: &WebviewWindow, dir: Option<String>) -> tauri_plugin_dialog::FileDialogBuilder<tauri::Wry> {
+    let mut d = window.dialog().file().set_parent(window);
     if let Some(dir) = dir.filter(|d| Path::new(d).is_dir()) {
         d = d.set_directory(dir);
     }
@@ -153,8 +179,8 @@ fn dialog_at(app: &AppHandle, dir: Option<String>) -> tauri_plugin_dialog::FileD
 }
 
 #[tauri::command]
-async fn pick_files(app: AppHandle, dir: Option<String>) -> Vec<String> {
-    dialog_at(&app, dir)
+async fn pick_files(window: WebviewWindow, dir: Option<String>) -> Vec<String> {
+    dialog_at(&window, dir)
         .blocking_pick_files()
         .unwrap_or_default()
         .into_iter()
@@ -163,13 +189,13 @@ async fn pick_files(app: AppHandle, dir: Option<String>) -> Vec<String> {
 }
 
 #[tauri::command]
-async fn pick_folder(app: AppHandle, dir: Option<String>) -> Option<String> {
-    picked(dialog_at(&app, dir).blocking_pick_folder())
+async fn pick_folder(window: WebviewWindow, dir: Option<String>) -> Option<String> {
+    picked(dialog_at(&window, dir).blocking_pick_folder())
 }
 
 #[tauri::command]
-async fn pick_save(app: AppHandle, dir: Option<String>, name: Option<String>) -> Option<String> {
-    let mut d = dialog_at(&app, dir);
+async fn pick_save(window: WebviewWindow, dir: Option<String>, name: Option<String>) -> Option<String> {
+    let mut d = dialog_at(&window, dir);
     if let Some(name) = name {
         d = d.set_file_name(name);
     }
@@ -177,28 +203,87 @@ async fn pick_save(app: AppHandle, dir: Option<String>, name: Option<String>) ->
 }
 
 #[tauri::command]
-fn set_title(app: AppHandle, title: String) {
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.set_title(&title);
-    }
+fn set_title(window: WebviewWindow, title: String) {
+    let _ = window.set_title(&title);
 }
 
 /// The UI is listening. Returns any paths that arrived since `app_info`.
 #[tauri::command]
-fn frontend_ready(state: State<AppState>) -> Vec<String> {
-    let mut pending = state.pending_paths.lock().unwrap();
-    state.frontend_ready.store(true, Ordering::SeqCst);
-    std::mem::take(&mut *pending)
+fn frontend_ready(window: WebviewWindow, state: State<AppState>) -> Vec<String> {
+    let mut windows = state.windows.lock().unwrap();
+    let w = windows.entry(window.label().to_string()).or_default();
+    w.ready = true;
+    std::mem::take(&mut w.pending)
 }
 
-/// Hand paths to the UI now, or keep them until it is ready.
-fn deliver_paths(app: &AppHandle, paths: Vec<String>) {
+/// The window that `fedit <path>` should open in: the one last focused.
+fn target_window(app: &AppHandle) -> Option<WebviewWindow> {
+    let last = app.state::<AppState>().last_focused.lock().unwrap().clone();
+    app.get_webview_window(&last)
+        .or_else(|| app.get_webview_window(MAIN))
+        .or_else(|| app.webview_windows().into_values().next())
+}
+
+/// Hand paths to a window's UI now, or keep them until it is ready.
+fn deliver_paths(app: &AppHandle, label: &str, paths: Vec<String>) {
     let state = app.state::<AppState>();
-    let mut pending = state.pending_paths.lock().unwrap();
-    if state.frontend_ready.load(Ordering::SeqCst) {
-        let _ = app.emit("open-paths", paths);
+    let mut windows = state.windows.lock().unwrap();
+    let w = windows.entry(label.to_string()).or_default();
+    if w.ready {
+        let _ = app.emit_to(label, "open-paths", paths);
     } else {
-        pending.extend(paths);
+        w.pending.extend(paths);
+    }
+}
+
+/// Open another editor window showing `paths` (none: an empty window).
+fn open_window(app: &AppHandle, paths: Vec<String>) -> tauri::Result<()> {
+    let state = app.state::<AppState>();
+    let label = format!("w{}", state.next_window.fetch_add(1, Ordering::SeqCst));
+    state.windows.lock().unwrap().insert(label.clone(), WindowState { pending: paths, ..Default::default() });
+    let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
+        .title("Fedit")
+        .inner_size(1100.0, 760.0)
+        .min_inner_size(420.0, 300.0)
+        .build();
+    if built.is_err() {
+        state.windows.lock().unwrap().remove(&label);
+    }
+    built.map(|_| ())
+}
+
+// Async: creating a window from a synchronous command deadlocks on Windows.
+#[tauri::command]
+async fn new_window(app: AppHandle, paths: Vec<String>) -> R<()> {
+    open_window(&app, paths).map_err(err)
+}
+
+/// Close the calling window, without asking: the UI has already dealt with
+/// unsaved changes. Closing the last window ends the app.
+#[tauri::command]
+fn close_window(app: AppHandle, window: WebviewWindow) {
+    if app.webview_windows().len() <= 1 {
+        app.exit(0);
+    } else {
+        let _ = window.destroy();
+    }
+}
+
+/// Ask every window to close. Each prompts for its own unsaved changes; a
+/// window whose UI never started is simply closed.
+fn request_quit(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let ready: HashSet<String> =
+        state.windows.lock().unwrap().iter().filter(|(_, w)| w.ready).map(|(label, _)| label.clone()).collect();
+    if ready.is_empty() {
+        return app.exit(0);
+    }
+    for (label, window) in app.webview_windows() {
+        if ready.contains(&label) {
+            let _ = app.emit_to(label.as_str(), "close-requested", ());
+        } else {
+            let _ = window.destroy();
+        }
     }
 }
 
@@ -215,7 +300,7 @@ async fn clipboard_write(app: AppHandle, text: String) -> R<()> {
 
 #[tauri::command]
 fn quit(app: AppHandle) {
-    app.exit(0);
+    request_quit(&app);
 }
 
 fn main() {
@@ -224,13 +309,17 @@ fn main() {
     let initial_paths = fsops::resolve_args(&args, &cwd);
 
     let mut builder = tauri::Builder::default();
-    // A second `fedit <path>` hands its paths to the running window and exits.
+    // A second `fedit <path>` hands its paths to the running app and exits:
+    // to the window last used, or with `--new-window` to a window of their own.
     if std::env::var_os("FEDIT_NEW_INSTANCE").is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             let rest: Vec<String> = argv.into_iter().skip(1).collect();
-            // Queued if the first window is still starting up.
-            deliver_paths(app, fsops::resolve_args(&rest, Path::new(&cwd)));
-            if let Some(w) = app.get_webview_window("main") {
+            let paths = fsops::resolve_args(&rest, Path::new(&cwd));
+            if rest.iter().any(|a| a == "--new-window" || a == "-n") {
+                let _ = open_window(app, paths);
+            } else if let Some(w) = target_window(app) {
+                // Queued if that window is still starting up.
+                deliver_paths(app, w.label(), paths);
                 let _ = w.unminimize();
                 let _ = w.set_focus();
             }
@@ -243,8 +332,12 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
             watching: Mutex::new(Watching::default()),
-            pending_paths: Mutex::new(initial_paths),
-            frontend_ready: AtomicBool::new(false),
+            windows: Mutex::new(HashMap::from([(
+                MAIN.to_string(),
+                WindowState { pending: initial_paths, ..Default::default() },
+            )])),
+            last_focused: Mutex::new(MAIN.to_string()),
+            next_window: AtomicUsize::new(2),
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -264,12 +357,24 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // The frontend owns the unsaved-changes prompt, then calls `quit`.
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.state::<AppState>().frontend_ready.load(Ordering::SeqCst) {
-                    api.prevent_close();
-                    let _ = window.emit("close-requested", ());
+            let state = window.state::<AppState>();
+            match event {
+                // The frontend owns the unsaved-changes prompt, then calls `close_window`.
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    let ready = state.windows.lock().unwrap().get(window.label()).is_some_and(|w| w.ready);
+                    if ready {
+                        api.prevent_close();
+                        let _ = window.app_handle().emit_to(window.label(), "close-requested", ());
+                    }
                 }
+                tauri::WindowEvent::Focused(true) => {
+                    *state.last_focused.lock().unwrap() = window.label().to_string();
+                }
+                tauri::WindowEvent::Destroyed => {
+                    state.windows.lock().unwrap().remove(window.label());
+                    sync_watches(&state);
+                }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -292,6 +397,8 @@ fn main() {
             pick_save,
             set_title,
             frontend_ready,
+            new_window,
+            close_window,
             clipboard_read,
             clipboard_write,
             quit
@@ -299,13 +406,15 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building fedit")
         .run(|app, event| match event {
-            // A quit that did not come from our own `quit` command (the macOS
-            // app menu or Dock, for instance) goes through the same
-            // unsaved-changes prompt as closing the window.
+            // A quit that did not come from our own commands (the macOS app
+            // menu or Dock, for instance) goes through the same unsaved-changes
+            // prompts as closing each window. With no window left it is just
+            // the app ending after its last window closed.
             tauri::RunEvent::ExitRequested { api, code: None, .. } => {
-                if app.state::<AppState>().frontend_ready.load(Ordering::SeqCst) {
+                let any_ready = app.state::<AppState>().windows.lock().unwrap().values().any(|w| w.ready);
+                if any_ready && !app.webview_windows().is_empty() {
                     api.prevent_exit();
-                    let _ = app.emit("close-requested", ());
+                    request_quit(app);
                 }
             }
             // macOS delivers "open with" and file drops on the dock icon as an
@@ -317,7 +426,9 @@ fn main() {
                     .filter_map(|u| u.to_file_path().ok())
                     .map(|p| p.to_string_lossy().into_owned())
                     .collect();
-                deliver_paths(app, paths);
+                if let Some(w) = target_window(app) {
+                    deliver_paths(app, w.label(), paths);
+                }
             }
             _ => {}
         });

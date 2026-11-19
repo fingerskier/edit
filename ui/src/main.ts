@@ -59,20 +59,53 @@ async function boot(): Promise<void> {
   } catch {
     // A damaged state file only costs the remembered session.
   }
-  const lastSession = structuredClone(state.session);
+  // A reload reopens what this window itself had open, whichever window it is.
+  const RELOAD_KEY = 'fedit.reloadSession';
+  const reloaded = sessionStorage.getItem(RELOAD_KEY);
+  sessionStorage.removeItem(RELOAD_KEY);
+  let lastSession = structuredClone(state.session);
+  try {
+    if (reloaded) lastSession = { ...DEFAULT_STATE.session, ...JSON.parse(reloaded) };
+  } catch {
+    // Not worth failing a start over.
+  }
+  const currentSession = (): PersistedState['session'] => ({
+    folder: app.explorer.root,
+    files: app.workbench.tabs.map((t) => t.path).filter((p): p is string => p !== null),
+    active: app.workbench.active?.path ?? null,
+    expanded: [...app.explorer.expanded],
+  });
 
   let booted = false;
   let stateTimer: number | undefined;
+  // Every window shares state.json. Changes to the recent lists are kept as
+  // operations and replayed over what is on disk, so one window's write does
+  // not erase files another window opened since.
+  const recentOps: ((s: PersistedState) => void)[] = [];
+  const changeRecents = (op: (s: PersistedState) => void) => {
+    op(state);
+    recentOps.push(op);
+    app.saveState();
+  };
   const writeState = async () => {
     clearTimeout(stateTimer);
     stateTimer = undefined;
     if (!booted) return;
-    state.session = {
-      folder: app.explorer.root,
-      files: app.workbench.tabs.map((t) => t.path).filter((p): p is string => p !== null),
-      active: app.workbench.active?.path ?? null,
-      expanded: [...app.explorer.expanded],
-    };
+    const ops = recentOps.splice(0);
+    let session = state.session;
+    try {
+      const disk = JSON.parse((await readText(statePath)) ?? 'null');
+      // The session belongs to the first window, the one that restores it.
+      if (!info.restore && disk?.session) session = disk.session;
+      if (Array.isArray(disk?.recentFiles) && Array.isArray(disk?.recentFolders)) {
+        state.recentFiles = disk.recentFiles;
+        state.recentFolders = disk.recentFolders;
+        for (const op of [...ops, ...recentOps]) op(state);
+      }
+    } catch {
+      // Unreadable: what this window knows is written as it is.
+    }
+    state.session = info.restore ? currentSession() : session;
     try {
       await backend.writeFile(statePath, JSON.stringify(state, null, 2));
     } catch (e) {
@@ -98,13 +131,15 @@ async function boot(): Promise<void> {
     },
     addRecent(kind: 'file' | 'folder', path: string) {
       const key = kind === 'file' ? 'recentFiles' : 'recentFolders';
-      state[key] = [path, ...state[key].filter((p) => p !== path)].slice(0, kind === 'file' ? MAX_RECENT_FILES : MAX_RECENT_FOLDERS);
-      app.saveState();
+      changeRecents((s) => {
+        s[key] = [path, ...s[key].filter((p) => p !== path)].slice(0, kind === 'file' ? MAX_RECENT_FILES : MAX_RECENT_FOLDERS);
+      });
     },
     removeRecent(path: string) {
-      state.recentFiles = state.recentFiles.filter((p) => p !== path);
-      state.recentFolders = state.recentFolders.filter((p) => p !== path);
-      app.saveState();
+      changeRecents((s) => {
+        s.recentFiles = s.recentFiles.filter((p) => p !== path);
+        s.recentFolders = s.recentFolders.filter((p) => p !== path);
+      });
     },
     async openPath(path: string) {
       const stat = await backend.stat(path);
@@ -364,7 +399,8 @@ async function boot(): Promise<void> {
       leaving = false;
     }
   }
-  const requestQuit = () => leave('Quit', 'quitting', () => backend.quit());
+  /** Close this window, once its unsaved changes are settled. */
+  const closeWindow = () => leave('Quit', 'quitting', () => backend.closeWindow());
 
   // ----- commands ----------------------------------------------------------
 
@@ -399,22 +435,29 @@ async function boot(): Promise<void> {
     await app.openPath(path);
   });
   reg('workbench.action.clearRecentFiles', 'File: Clear Recently Opened', () => {
-    state.recentFiles = [];
-    state.recentFolders = [];
-    app.saveState();
+    changeRecents((s) => {
+      s.recentFiles = [];
+      s.recentFolders = [];
+    });
     explorer.render();
   });
   reg('workbench.action.files.save', 'File: Save', () => wb.save());
   reg('workbench.action.files.saveAs', 'File: Save As…', () => wb.saveAs());
   reg('workbench.action.files.saveAll', 'File: Save All', () => wb.saveAll());
-  reg('workbench.action.closeActiveEditor', 'View: Close Editor', () => (wb.active ? wb.close(wb.active) : requestQuit()));
+  reg('workbench.action.closeActiveEditor', 'View: Close Editor', () => (wb.active ? wb.close(wb.active) : closeWindow()));
   reg('workbench.action.closeAllEditors', 'View: Close All Editors', () => wb.closeAll());
   reg('workbench.action.reopenClosedEditor', 'View: Reopen Closed Editor', () => wb.reopenClosed());
   reg('workbench.action.nextEditor', 'View: Open Next Editor', () => wb.cycle(1));
   reg('workbench.action.previousEditor', 'View: Open Previous Editor', () => wb.cycle(-1));
   for (let n = 1; n <= 9; n++) reg(`workbench.action.openEditorAtIndex${n}`, undefined, () => wb.activateIndex(n - 1));
-  reg('workbench.action.quit', 'File: Quit', () => requestQuit());
-  reg('workbench.action.reloadWindow', 'Developer: Reload Window', () => leave('Reload', 'reloading', () => location.reload()));
+  reg('workbench.action.newWindow', 'File: New Window', () => backend.newWindow([]));
+  reg('workbench.action.closeWindow', 'File: Close Window', () => closeWindow());
+  // Quitting closes every window; the host asks each one, this one included.
+  reg('workbench.action.quit', 'File: Quit', () => backend.quit());
+  reg('workbench.action.reloadWindow', 'Developer: Reload Window', () => leave('Reload', 'reloading', () => {
+    sessionStorage.setItem(RELOAD_KEY, JSON.stringify(currentSession()));
+    location.reload();
+  }));
   reg('fedit.openPath', undefined, (path: string) => app.openPath(path));
 
   reg('workbench.action.quickOpen', 'Go to File…', () => (app.palette.isOpen ? app.palette.close(true) : quickOpen()));
@@ -575,7 +618,7 @@ async function boot(): Promise<void> {
     for (const path of paths) await app.openPath(path).catch((e) => toast(errorText(e), 'error'));
   };
   backend.on('open-paths', (paths: string[]) => void openMany(paths));
-  backend.on('close-requested', () => void requestQuit());
+  backend.on('close-requested', () => void closeWindow());
   backend.onDrop((paths) => void openMany(paths));
 
   // The webview's own context menu offers "Reload", which would discard
@@ -698,7 +741,7 @@ async function boot(): Promise<void> {
   if (cliFolder) {
     // An explicit folder starts a fresh workspace; its own session is not known.
     await setFolder(cliFolder.path, cliFolder.path === lastSession.folder ? lastSession.expanded : []);
-  } else if (app.settings['window.restoreSession']) {
+  } else if (reloaded || (info.restore && app.settings['window.restoreSession'])) {
     if (lastSession.folder && (await backend.stat(lastSession.folder)).kind === 'dir') {
       await setFolder(lastSession.folder, lastSession.expanded, true);
     }

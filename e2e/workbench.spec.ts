@@ -317,3 +317,43 @@ test('editor context menu cuts, copies and pastes through the system clipboard',
   await page.keyboard.press('Escape');
   await expect(page.locator('.menu')).toHaveCount(0);
 });
+
+test('new window, close window and quit go to the host', async ({ page }) => {
+  await start(page, { files: { '/w/a.txt': 'alpha\n' }, paths: ['/w/a.txt'] });
+  await page.keyboard.press('Control+Shift+N');
+  await expect.poll(() => mock(page, (m) => m.windows)).toEqual([[]]);
+  expect(await mock(page, (m) => m.quit)).toBe(false);
+  // Closing a window with unsaved work asks first.
+  await page.keyboard.type('x');
+  await page.keyboard.press('Control+Shift+W');
+  await expect(page.locator('#palette-list .pick')).toHaveText(['Save All and Quit', 'Quit Without Saving', 'Cancel']);
+  await page.keyboard.press('Escape');
+  expect(await mock(page, (m) => m.quit)).toBe(false);
+  await runCommand(page, 'File: Close Window');
+  await page.locator('#palette-list .pick', { hasText: 'Quit Without Saving' }).click();
+  await expect.poll(() => mock(page, (m) => m.quit)).toBe(true);
+});
+
+test('a second window starts empty and keeps the recent files other windows added', async ({ page }) => {
+  const state = {
+    recentFiles: ['/w/old.txt'],
+    recentFolders: [],
+    session: { folder: null, files: ['/w/a.txt'], active: '/w/a.txt', expanded: [] },
+  };
+  await start(page, {
+    files: { '/w/a.txt': 'alpha\n', '/w/b.txt': 'beta\n', '/config/state.json': JSON.stringify(state) },
+    paths: [],
+    restore: false,
+  });
+  expect(await mock(page, (m) => m.ready)).toBe(true);
+  await expect(page.locator('#tabs .tab')).toHaveCount(0);
+  // Another window records a file while this one is open.
+  await mock(page, (m) => m.externalWrite('/config/state.json', JSON.stringify({ recentFiles: ['/w/other.txt', '/w/old.txt'], recentFolders: [], session: { folder: null, files: ['/w/keep.txt'], active: null, expanded: [] } })));
+  await page.evaluate(() => (window as any).fedit.openPath('/w/b.txt'));
+  await expect
+    .poll(async () => JSON.parse((await mock(page, (m) => m.read('/config/state.json'))) as string).recentFiles)
+    .toEqual(['/w/b.txt', '/w/other.txt', '/w/old.txt']);
+  // The session stays the first window's: this window's tabs are not saved over it.
+  const saved = JSON.parse((await mock(page, (m) => m.read('/config/state.json'))) as string);
+  expect(saved.session.files).toEqual(['/w/keep.txt']);
+});

@@ -63,12 +63,17 @@ fedit plugin add <pkg>     Install a plugin package from npm
 fedit plugin remove <pkg>  Remove an installed plugin package
 fedit plugin list          List plugins
 
---new-instance   Open a separate window instead of reusing the running one
+-n, --new-window Open the paths in a new window of the running app
+--new-instance   Start a separate, independent copy of the app
 --from-source    With install: build the app with cargo instead of downloading
 --verbose        Keep the app attached to the terminal and show its output
 ```
 
-`fedit <path>` while Fedit is running opens the path in the existing window.
+`fedit <path>` while Fedit is running opens the path in the window you used
+last; `fedit -n <path>` opens it in a new window instead. **File: New Window**
+(`Ctrl+Shift+N`) opens an empty one. Each window has its own folder and tabs,
+and closing the last window ends the app. The first window is the one
+whose folder and tabs are remembered and reopened next time.
 A path that does not exist opens as a new file, created when you save.
 
 ## Keys
@@ -104,7 +109,9 @@ The defaults follow VS Code on Linux and Windows; on macOS, `Ctrl` becomes `Cmd`
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | Zoom in / out / reset |
 | `Ctrl+,` | Settings |
 | `Ctrl+K Ctrl+S` | Keyboard shortcuts |
-| `Ctrl+Q` | Quit |
+| `Ctrl+Shift+N` | New window |
+| `Ctrl+Shift+W` | Close window |
+| `Ctrl+Q` | Quit (closes every window) |
 
 Run **Preferences: Open Default Keyboard Shortcuts** for the complete list.
 
@@ -184,7 +191,7 @@ with full access to your files, so install only ones you trust.
 
 ## Limits
 
-- One window, one folder at a time, no split panes.
+- One folder per window, no split panes. Tabs cannot be moved between windows.
 - Files are read and written as UTF-8. A file that is not valid UTF-8 opens
   read-only so it cannot be damaged.
 - No language servers: no completion, diagnostics, or go-to-definition.
